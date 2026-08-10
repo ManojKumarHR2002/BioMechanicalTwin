@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+```
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>IMU WebSocket Test</title>
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #111;
+        color: #eee;
+        margin: 0;
+        padding: 30px;
+    }
+
+    h1 {
+        margin-top: 0;
+    }
+
+    .status {
+        display: inline-block;
+        padding: 10px 18px;
+        border-radius: 6px;
+        font-weight: bold;
+        margin-bottom: 20px;
+    }
+
+    .connecting {
+        background: #555;
+    }
+
+    .connected {
+        background: #16803c;
+    }
+
+    .disconnected {
+        background: #9b2226;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 15px;
+        margin-bottom: 25px;
+    }
+
+    .card {
+        background: #1d1d1d;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 18px;
+    }
+
+    .label {
+        color: #999;
+        font-size: 13px;
+        margin-bottom: 8px;
+    }
+
+    .value {
+        font-size: 25px;
+        font-weight: bold;
+    }
+
+    pre {
+        background: #080808;
+        border: 1px solid #333;
+        padding: 15px;
+        border-radius: 8px;
+        overflow: auto;
+        max-height: 500px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #1d1d1d;
+    }
+
+    th,
+    td {
+        border: 1px solid #333;
+        padding: 10px;
+        text-align: left;
+    }
+
+    th {
+        background: #292929;
+    }
+
+    .ok {
+        color: #55dd88;
+    }
+
+    .bad {
+        color: #ff6666;
+    }
+</style>
+```
+
+</head>
+
+<body>
+
+```
+<h1>IMU WebSocket Test</h1>
+
+<div id="status"
+     class="status connecting">
+    Connecting...
+</div>
+
+<div class="grid">
+
+    <div class="card">
+        <div class="label">
+            WebSocket
+        </div>
+
+        <div id="connection"
+             class="value">
+            Connecting
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="label">
+            Frames Received
+        </div>
+
+        <div id="frameCount"
+             class="value">
+            0
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="label">
+            Frame Rate
+        </div>
+
+        <div id="fps"
+             class="value">
+            0 FPS
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="label">
+            Last Frame Time
+        </div>
+
+        <div id="frameTime"
+             class="value">
+            -
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="label">
+            Sensors
+        </div>
+
+        <div id="sensorCount"
+             class="value">
+            0
+        </div>
+    </div>
+
+</div>
+
+<h2>Sensor Data</h2>
+
+<table>
+
+    <thead>
+        <tr>
+            <th>Sensor</th>
+            <th>ax</th>
+            <th>ay</th>
+            <th>az</th>
+            <th>gx</th>
+            <th>gy</th>
+            <th>gz</th>
+            <th>qw</th>
+            <th>qx</th>
+            <th>qy</th>
+            <th>qz</th>
+        </tr>
+    </thead>
+
+    <tbody id="sensorTable">
+    </tbody>
+
+</table>
+
+<h2>Latest Frame JSON</h2>
+
+<pre id="jsonOutput">
+```
+
+Waiting for frame... </pre>
+
+<script>
+
+    // ============================================================
+    // CONFIGURATION
+    // ============================================================
+
+    /*
+     * If the browser and Node.js server are on the SAME machine:
+     *
+     * ws://127.0.0.1:3000/ws
+     *
+     * If the browser is on another computer:
+     *
+     * ws://YOUR_SERVER_IP:3000/ws
+     */
+
+    const WS_URL = "ws://127.0.0.1:3000/ws";
+
+
+    // ============================================================
+    // VARIABLES
+    // ============================================================
+
+    let socket;
+
+    let frameCount = 0;
+
+    let lastSecondFrames = 0;
+
+    let fps = 0;
+
+
+    // ============================================================
+    // HTML ELEMENTS
+    // ============================================================
+
+    const statusElement =
+        document.getElementById("status");
+
+    const connectionElement =
+        document.getElementById("connection");
+
+    const frameCountElement =
+        document.getElementById("frameCount");
+
+    const fpsElement =
+        document.getElementById("fps");
+
+    const frameTimeElement =
+        document.getElementById("frameTime");
+
+    const sensorCountElement =
+        document.getElementById("sensorCount");
+
+    const sensorTable =
+        document.getElementById("sensorTable");
+
+    const jsonOutput =
+        document.getElementById("jsonOutput");
+
+
+    // ============================================================
+    // CONNECT WEBSOCKET
+    // ============================================================
+
+    function connectWebSocket() {
+
+        console.log(
+            "Connecting to:",
+            WS_URL
+        );
+
+        socket = new WebSocket(WS_URL);
+
+
+        // --------------------------------------------------------
+        // CONNECTED
+        // --------------------------------------------------------
+
+        socket.onopen = function () {
+
+            console.log(
+                "WebSocket connected"
+            );
+
+            statusElement.textContent =
+                "CONNECTED";
+
+            statusElement.className =
+                "status connected";
+
+            connectionElement.textContent =
+                "Connected";
+
+            connectionElement.className =
+                "value ok";
+        };
+
+
+        // --------------------------------------------------------
+        // MESSAGE
+        // --------------------------------------------------------
+
+        socket.onmessage = function (event) {
+
+            try {
+
+                const message =
+                    JSON.parse(event.data);
+
+                console.log(
+                    "Received:",
+                    message
+                );
+
+
+                // ------------------------------------------------
+                // CONNECTION MESSAGE
+                // ------------------------------------------------
+
+                if (message.type === "connection") {
+
+                    console.log(
+                        message.message
+                    );
+
+                    return;
+                }
+
+
+                // ------------------------------------------------
+                // FRAME MESSAGE
+                // ------------------------------------------------
+
+                if (message.type !== "frame") {
+
+                    return;
+                }
+
+
+                const frame =
+                    message.data;
+
+
+                // Increase frame count
+
+                frameCount++;
+
+                lastSecondFrames++;
+
+                frameCountElement.textContent =
+                    frameCount;
+
+
+                // Frame timestamp
+
+                frameTimeElement.textContent =
+                    frame.time;
+
+
+                // Sensors
+
+                const sensors =
+                    frame.sensors || {};
+
+                const sensorNames =
+                    Object.keys(sensors);
+
+                sensorCountElement.textContent =
+                    sensorNames.length;
+
+
+                // Update sensor table
+
+                updateSensorTable(
+                    sensors
+                );
+
+
+                // Show JSON
+
+                jsonOutput.textContent =
+                    JSON.stringify(
+                        frame,
+                        null,
+                        4
+                    );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Invalid WebSocket message:",
+                    error
+                );
+
+            }
+
+        };
+
+
+        // --------------------------------------------------------
+        // CLOSED
+        // --------------------------------------------------------
+
+        socket.onclose = function () {
+
+            console.log(
+                "WebSocket disconnected"
+            );
+
+            statusElement.textContent =
+                "DISCONNECTED";
+
+            statusElement.className =
+                "status disconnected";
+
+            connectionElement.textContent =
+                "Disconnected";
+
+            connectionElement.className =
+                "value bad";
+
+
+            /*
+             * Try reconnecting after 2 seconds.
+             */
+
+            setTimeout(
+                connectWebSocket,
+                2000
+            );
+        };
+
+
+        // --------------------------------------------------------
+        // ERROR
+        // --------------------------------------------------------
+
+        socket.onerror = function (error) {
+
+            console.error(
+                "WebSocket error:",
+                error
+            );
+
+        };
+
+    }
+
+
+    // ============================================================
+    // UPDATE SENSOR TABLE
+    // ============================================================
+
+    function updateSensorTable(sensors) {
+
+        sensorTable.innerHTML = "";
+
+
+        for (const sensorName of Object.keys(sensors)) {
+
+            const sensor =
+                sensors[sensorName];
+
+
+            const row =
+                document.createElement("tr");
+
+
+            row.innerHTML = `
+
+                <td>
+                    <strong>
+                        ${sensorName}
+                    </strong>
+                </td>
+
+                <td>${formatValue(sensor.ax)}</td>
+                <td>${formatValue(sensor.ay)}</td>
+                <td>${formatValue(sensor.az)}</td>
+
+                <td>${formatValue(sensor.gx)}</td>
+                <td>${formatValue(sensor.gy)}</td>
+                <td>${formatValue(sensor.gz)}</td>
+
+                <td>${formatValue(sensor.qw)}</td>
+                <td>${formatValue(sensor.qx)}</td>
+                <td>${formatValue(sensor.qy)}</td>
+                <td>${formatValue(sensor.qz)}</td>
+
+            `;
+
+
+            sensorTable.appendChild(row);
+        }
+
+    }
+
+
+    // ============================================================
+    // FORMAT NUMBER
+    // ============================================================
+
+    function formatValue(value) {
+
+        if (value === null ||
+            value === undefined) {
+
+            return "-";
+        }
+
+
+        if (typeof value === "number") {
+
+            return value.toFixed(4);
+        }
+
+
+        return value;
+    }
+
+
+    // ============================================================
+    // FPS COUNTER
+    // ============================================================
+
+    setInterval(function () {
+
+        fps = lastSecondFrames;
+
+        lastSecondFrames = 0;
+
+        fpsElement.textContent =
+            fps + " FPS";
+
+    }, 1000);
+
+
+    // ============================================================
+    // START
+    // ============================================================
+
+    connectWebSocket();
+
+</script>
+
+</body>
+</html>
+
