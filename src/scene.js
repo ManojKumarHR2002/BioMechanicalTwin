@@ -45,7 +45,33 @@ export class SceneManager {
   initScene() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x09090b);
-    // this.scene.fog = new THREE.FogExp2(0x09090b, 0.035);
+
+    // Ground plane for realistic soft shadows
+    const groundGeo = new THREE.PlaneGeometry(50, 50);
+    const groundMat = new THREE.ShadowMaterial({ opacity: 0.35 });
+    const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.position.y = 0;
+    groundMesh.receiveShadow = true;
+    this.scene.add(groundMesh);
+
+    // Modern cybernetic 3D viewport grid
+    const gridHelper = new THREE.GridHelper(30, 30, 0x6366f1, 0x1e293b);
+    gridHelper.position.y = -0.001;
+    gridHelper.material.opacity = 0.25;
+    gridHelper.material.transparent = true;
+    this.scene.add(gridHelper);
+
+    // Global 3D World Axes Helper (+X = Red, +Y = Green, +Z = Blue)
+    this.axesHelper = new THREE.AxesHelper(1.5);
+    this.axesHelper.position.set(0, 0.005, 0);
+    this.scene.add(this.axesHelper);
+  }
+
+  setWorldAxesVisible(visible) {
+    if (this.axesHelper) {
+      this.axesHelper.visible = visible;
+    }
   }
 
   initCamera() {

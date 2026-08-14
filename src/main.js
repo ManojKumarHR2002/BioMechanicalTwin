@@ -2,6 +2,7 @@ import './style.css';
 import { SceneManager } from './scene.js';
 import { LightSetup } from './components/lights.js';
 import { IMUCubeManager } from './components/imuCube.js';
+import { HumanModelManager } from './components/humanModel.js';
 import { IMUSocketService } from './imuSocket.js';
 import { UIManager } from './ui.js';
 
@@ -18,9 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize 3D IMU Sensor Cube Manager
   const imuManager = new IMUCubeManager(sceneManager.scene);
 
+  // Initialize 3D Rigged Human Model Manager
+  const humanModelManager = new HumanModelManager(sceneManager.scene);
+
   // Register animation hooks
   sceneManager.addUpdateCallback((time, delta) => {
     imuManager.update(time, delta);
+    humanModelManager.update(time, delta);
     lights.update(time);
   });
 
@@ -29,7 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
   socketService.connect();
 
   // Initialize UI Controller
-  new UIManager(sceneManager, imuManager, socketService);
+  new UIManager(sceneManager, imuManager, humanModelManager, socketService, lights);
 
-  console.log('🚀 IMU 3D Realtime Visualizer Initialized!');
+  console.log('🚀 IMU 3D Rigged Human & Realtime Visualizer Initialized!');
 });
+
