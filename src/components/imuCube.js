@@ -18,6 +18,15 @@ export class IMUCubeManager {
       return this.cubes.get(sensorName);
     }
 
+    // Remove untouched initial placeholder 'Sensor1' if a real sensor with a different name arrives
+    if (sensorName !== 'Sensor1' && this.cubes.has('Sensor1')) {
+      const dummy = this.cubes.get('Sensor1');
+      if (!dummy.hasReceivedData) {
+        this.containerGroup.remove(dummy.group);
+        this.cubes.delete('Sensor1');
+      }
+    }
+
     const cubeGroup = new THREE.Group();
 
     // Box Geometry (Width 2.2, Height 1.2, Depth 2.2)
@@ -86,8 +95,10 @@ export class IMUCubeManager {
       targetQuaternion: new THREE.Quaternion(),
       currentQuaternion: new THREE.Quaternion(),
       zeroQuaternion: new THREE.Quaternion(),
+      lastRawQuaternion: new THREE.Quaternion(),
       targetPos: new THREE.Vector3(0, 0.5, 0),
       currentPos: new THREE.Vector3(0, 0.5, 0),
+      hasReceivedData: false,
     };
 
     this.cubes.set(sensorName, cubeData);
@@ -105,48 +116,108 @@ export class IMUCubeManager {
     for (const [_, cubeData] of this.cubes) {
       const posX = startX + index * spacing;
       cubeData.targetPos.x = posX;
-      cubeData.currentPos.x = posX;
-      cubeData.group.position.x = posX;
+      if (!cubeData.hasReceivedData) {
+        cubeData.currentPos.x = posX;
+        cubeData.group.position.x = posX;
+      }
       index++;
     }
   }
 
   updateSensorData(sensorName, data) {
-    const cube = this.getOrCreateCube(sensorName);
+    if (!data) return;
 
-    if (data.qw !== undefined && data.qx !== undefined && data.qy !== undefined && data.qz !== undefined) {
-      const rawQ = new THREE.Quaternion(data.qx, data.qy, data.qz, data.qw).normalize();
-      const invZero = cube.zeroQuaternion.clone().invert();
-      cube.targetQuaternion.copy(invZero.multiply(rawQ));
+    const cube = this.getOrCreateCube(sensorName);
+    cube.hasReceivedData = true;
+
+    // Extract acceleration for bump movement
+    const ayVal = data.ay ?? data.accY ?? (Array.isArray(data.acc) ? data.acc[1] : null);
+    if (this.applyAccPosition && ayVal !== null && ayVal !== undefined) {
+      const ayNum = Number(ayVal);
+      if (!isNaN(ayNum)) {
+        cube.targetPos.y = 0.5 + ayNum * 0.05;
+      }
     }
 
-    if (this.applyAccPosition && data.ax !== undefined && data.ay !== undefined && data.az !== undefined) {
-      cube.targetPos.y = 0.5 + data.ay * 0.05;
+    // Extract Quaternion values (supporting qw/qx/qy/qz, w/x/y/z, q0/q1/q2/q3, or array)
+    let qw, qx, qy, qz;
+
+    if (Array.isArray(data.quat) || Array.isArray(data.quaternion)) {
+      const qArr = data.quat || data.quaternion;
+      if (qArr.length >= 4) {
+        qw = Number(qArr[0]);
+        qx = Number(qArr[1]);
+        qy = Number(qArr[2]);
+        qz = Number(qArr[3]);
+      }
+    } else {
+      const rawQw = data.qw ?? data.w ?? data.q0;
+      const rawQx = data.qx ?? data.x ?? data.q1;
+      const rawQy = data.qy ?? data.y ?? data.q2;
+      const rawQz = data.qz ?? data.z ?? data.q3;
+
+      if (rawQw !== undefined && rawQx !== undefined && rawQy !== undefined && rawQz !== undefined) {
+        qw = Number(rawQw);
+        qx = Number(rawQx);
+        qy = Number(rawQy);
+        qz = Number(rawQz);
+      }
+    }
+
+    if (qw !== undefined && qx !== undefined && qy !== undefined && qz !== undefined) {
+      const lengthSq = qx * qx + qy * qy + qz * qz + qw * qw;
+
+      // CRITICAL BUG FIX: Validate quaternion length before normalizing!
+      // If qw=0, qx=0, qy=0, qz=0 or NaN, normalizing will produce NaN and cause 3D cube to disappear.
+      if (!isNaN(lengthSq) && lengthSq > 1e-6) {
+        const rawQ = new THREE.Quaternion(qx, qy, qz, qw).normalize();
+        cube.lastRawQuaternion.copy(rawQ);
+
+        const invZero = cube.zeroQuaternion.clone().invert();
+        cube.targetQuaternion.copy(invZero.multiply(rawQ));
+      }
+    } else if (data.roll !== undefined || data.pitch !== undefined || data.yaw !== undefined || data.rx !== undefined) {
+      // Fallback for Euler angles
+      const r = THREE.MathUtils.degToRad(Number(data.roll ?? data.rx ?? 0));
+      const p = THREE.MathUtils.degToRad(Number(data.pitch ?? data.ry ?? 0));
+      const y = THREE.MathUtils.degToRad(Number(data.yaw ?? data.rz ?? 0));
+
+      if (!isNaN(r) && !isNaN(p) && !isNaN(y)) {
+        const euler = new THREE.Euler(p, y, r, 'YXZ');
+        const rawQ = new THREE.Quaternion().setFromEuler(euler);
+        cube.lastRawQuaternion.copy(rawQ);
+
+        const invZero = cube.zeroQuaternion.clone().invert();
+        cube.targetQuaternion.copy(invZero.multiply(rawQ));
+      }
     }
   }
 
   calibrateZero(sensorName) {
     if (sensorName) {
       const cube = this.cubes.get(sensorName);
-      if (cube) {
-        cube.zeroQuaternion.copy(cube.targetQuaternion.clone().multiply(cube.zeroQuaternion));
-        cube.targetQuaternion.identity();
+      if (cube && cube.lastRawQuaternion) {
+        cube.zeroQuaternion.copy(cube.lastRawQuaternion);
       }
     } else {
       for (const [_, cube] of this.cubes) {
-        cube.zeroQuaternion.copy(cube.targetQuaternion.clone().multiply(cube.zeroQuaternion));
-        cube.targetQuaternion.identity();
+        if (cube.lastRawQuaternion) {
+          cube.zeroQuaternion.copy(cube.lastRawQuaternion);
+        }
       }
     }
   }
 
   update(time, delta) {
     for (const [_, cube] of this.cubes) {
-      cube.currentQuaternion.slerp(cube.targetQuaternion, this.slerpFactor);
-      cube.group.quaternion.copy(cube.currentQuaternion);
+      // Check if quaternion components are valid before slerping
+      if (!isNaN(cube.targetQuaternion.x) && !isNaN(cube.targetQuaternion.w)) {
+        cube.currentQuaternion.slerp(cube.targetQuaternion, this.slerpFactor);
+        cube.group.quaternion.copy(cube.currentQuaternion);
+      }
 
       cube.currentPos.lerp(cube.targetPos, 0.1);
-      cube.group.position.y = cube.currentPos.y;
+      cube.group.position.copy(cube.currentPos);
     }
   }
 }

@@ -45,7 +45,7 @@ export class SceneManager {
   initScene() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x09090b);
-    this.scene.fog = new THREE.FogExp2(0x09090b, 0.035);
+    // this.scene.fog = new THREE.FogExp2(0x09090b, 0.035);
   }
 
   initCamera() {
@@ -59,14 +59,14 @@ export class SceneManager {
     this.controls.dampingFactor = 0.05;
     this.controls.maxPolarAngle = Math.PI / 2 + 0.1;
     this.controls.minDistance = 2.5;
-    this.controls.maxDistance = 18.0;
+    this.controls.maxDistance = 100;
     this.controls.target.set(0, 0.5, 0);
   }
 
   initViewHelper() {
     // Unity / Blender style 3D Viewport Orientation Gizmo
     this.viewHelper = new ViewHelper(this.camera, this.canvas);
-    
+
     // Position ViewHelper overlay container at top-right
     if (this.viewHelper.center) {
       this.viewHelper.center.set(0, 0, 0);

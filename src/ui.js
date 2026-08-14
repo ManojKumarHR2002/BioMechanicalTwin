@@ -97,24 +97,47 @@ export class UIManager {
       if (this.frameCountMobile) this.frameCountMobile.textContent = countStr;
 
       if (this.frameTimeElement) {
-        this.frameTimeElement.textContent = frame.time || '-';
+        this.frameTimeElement.textContent = frame.time || frame.timestamp || new Date().toLocaleTimeString();
       }
 
-      const sensorNames = Object.keys(sensors);
+      // Normalize sensors payload to standard object map: { [sensorName]: sensorData }
+      const normalizedSensors = {};
+
+      if (Array.isArray(sensors)) {
+        sensors.forEach((s, idx) => {
+          const sName = s.name || s.id || s.sensorId || `Sensor${idx + 1}`;
+          normalizedSensors[sName] = s;
+        });
+      } else if (typeof sensors === 'object' && sensors !== null) {
+        for (const [key, val] of Object.entries(sensors)) {
+          if (typeof val === 'object' && val !== null) {
+            normalizedSensors[key] = val;
+          }
+        }
+      }
+
+      // Fallback if normalizedSensors is empty but frame has telemetry fields
+      if (Object.keys(normalizedSensors).length === 0 && frame) {
+        if (frame.qw !== undefined || frame.w !== undefined || frame.ax !== undefined || frame.accX !== undefined) {
+          normalizedSensors['Sensor1'] = frame;
+        }
+      }
+
+      const sensorNames = Object.keys(normalizedSensors);
       const sCountStr = String(sensorNames.length);
       if (this.sensorCountElement) this.sensorCountElement.textContent = sCountStr;
       if (this.sensorCountMobile) this.sensorCountMobile.textContent = sCountStr;
 
       // Update 3D Cubes & Sensor Table
-      this.updateSensorTable(sensors);
+      this.updateSensorTable(normalizedSensors);
 
       for (const name of sensorNames) {
-        this.imuManager.updateSensorData(name, sensors[name]);
+        this.imuManager.updateSensorData(name, normalizedSensors[name]);
       }
 
       // Show JSON if open
       if (this.jsonOutput && !this.jsonContainer.classList.contains('hidden')) {
-        this.jsonOutput.textContent = JSON.stringify(frame, null, 4);
+        this.jsonOutput.textContent = JSON.stringify(frame, null, 2);
       }
     };
   }
@@ -191,22 +214,36 @@ export class UIManager {
     this.sensorTable.innerHTML = '';
 
     for (const name of names) {
-      const s = sensors[name];
+      const s = sensors[name] || {};
+
+      const ax = s.ax ?? s.accX ?? (Array.isArray(s.acc) ? s.acc[0] : null);
+      const ay = s.ay ?? s.accY ?? (Array.isArray(s.acc) ? s.acc[1] : null);
+      const az = s.az ?? s.accZ ?? (Array.isArray(s.acc) ? s.acc[2] : null);
+
+      const gx = s.gx ?? s.gyroX ?? (Array.isArray(s.gyro) ? s.gyro[0] : null);
+      const gy = s.gy ?? s.gyroY ?? (Array.isArray(s.gyro) ? s.gyro[1] : null);
+      const gz = s.gz ?? s.gyroZ ?? (Array.isArray(s.gyro) ? s.gyro[2] : null);
+
+      const qw = s.qw ?? s.w ?? s.q0 ?? (Array.isArray(s.quat) ? s.quat[0] : null);
+      const qx = s.qx ?? s.x ?? s.q1 ?? (Array.isArray(s.quat) ? s.quat[1] : null);
+      const qy = s.qy ?? s.y ?? s.q2 ?? (Array.isArray(s.quat) ? s.quat[2] : null);
+      const qz = s.qz ?? s.z ?? s.q3 ?? (Array.isArray(s.quat) ? s.quat[3] : null);
+
       const row = document.createElement('tr');
       row.className = 'hover:bg-white/5 transition-colors';
 
       row.innerHTML = `
         <td class="py-1.5 px-3 font-bold text-indigo-300">${name}</td>
-        <td class="py-1.5 px-3">${this.formatValue(s.ax)}</td>
-        <td class="py-1.5 px-3">${this.formatValue(s.ay)}</td>
-        <td class="py-1.5 px-3">${this.formatValue(s.az)}</td>
-        <td class="py-1.5 px-3">${this.formatValue(s.gx)}</td>
-        <td class="py-1.5 px-3">${this.formatValue(s.gy)}</td>
-        <td class="py-1.5 px-3">${this.formatValue(s.gz)}</td>
-        <td class="py-1.5 px-3 font-semibold text-amber-300">${this.formatValue(s.qw)}</td>
-        <td class="py-1.5 px-3">${this.formatValue(s.qx)}</td>
-        <td class="py-1.5 px-3">${this.formatValue(s.qy)}</td>
-        <td class="py-1.5 px-3">${this.formatValue(s.qz)}</td>
+        <td class="py-1.5 px-3">${this.formatValue(ax)}</td>
+        <td class="py-1.5 px-3">${this.formatValue(ay)}</td>
+        <td class="py-1.5 px-3">${this.formatValue(az)}</td>
+        <td class="py-1.5 px-3">${this.formatValue(gx)}</td>
+        <td class="py-1.5 px-3">${this.formatValue(gy)}</td>
+        <td class="py-1.5 px-3">${this.formatValue(gz)}</td>
+        <td class="py-1.5 px-3 font-semibold text-amber-300">${this.formatValue(qw)}</td>
+        <td class="py-1.5 px-3">${this.formatValue(qx)}</td>
+        <td class="py-1.5 px-3">${this.formatValue(qy)}</td>
+        <td class="py-1.5 px-3">${this.formatValue(qz)}</td>
       `;
 
       this.sensorTable.appendChild(row);
@@ -214,9 +251,10 @@ export class UIManager {
   }
 
   formatValue(val) {
-    if (val === null || val === undefined) return '-';
-    if (typeof val === 'number') return val.toFixed(4);
-    return val;
+    if (val === null || val === undefined || val === '') return '-';
+    const num = Number(val);
+    if (!isNaN(num)) return num.toFixed(4);
+    return String(val);
   }
 
   initLilGui() {

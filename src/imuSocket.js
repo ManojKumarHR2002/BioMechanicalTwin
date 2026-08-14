@@ -62,14 +62,26 @@ export class IMUSocketService {
             return;
           }
 
-          if (message.type !== 'frame') return;
+          let frame = null;
+          if (message.type === 'frame' && message.data) {
+            frame = message.data;
+          } else if (message.data) {
+            frame = message.data;
+          } else {
+            frame = message;
+          }
 
-          const frame = message.data;
           this.frameCount++;
           this.lastSecondFrames++;
-          this.lastFrameTime = frame.time || new Date().toISOString();
+          this.lastFrameTime = frame.time || frame.timestamp || new Date().toISOString();
           this.latestFrame = frame;
-          this.sensors = frame.sensors || {};
+
+          let sensors = frame.sensors || frame.sensorData || {};
+          if ((!sensors || Object.keys(sensors).length === 0) && (frame.qw !== undefined || frame.w !== undefined || frame.ax !== undefined || frame.qx !== undefined)) {
+            sensors = { Sensor1: frame };
+          }
+
+          this.sensors = sensors;
 
           if (this.onFrameReceived) {
             this.onFrameReceived(frame, this.sensors);
