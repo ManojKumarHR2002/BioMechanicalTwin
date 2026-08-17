@@ -31,7 +31,6 @@ export class CalibrationPage {
     this.sensorDetector = sensorDetector;
 
     this.selectedSensor = null;
-    this.autoMapOnShake = true;
     this._toastTimer = null;
 
     this.initLayout();
@@ -46,24 +45,19 @@ export class CalibrationPage {
         <div class="glass-panel p-5 rounded-3xl glow-indigo flex flex-wrap items-center justify-between gap-4 border border-indigo-500/20">
           <div class="flex items-center gap-3">
             <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-cyan-400 flex items-center justify-center text-2xl shadow-lg shadow-indigo-500/30">
-              ⚡
+              🎯
             </div>
             <div>
               <h2 class="text-lg sm:text-xl font-bold font-['Space_Grotesk'] text-white">
-                Sensor Shake-to-Map Calibration Hub
+                Sensor-to-Bone Kinematic Mapping Hub
               </h2>
               <p class="text-xs text-slate-400 font-light">
-                Physically shake an IMU sensor to light it up, then map it to any body part on the avatar.
+                Map active IMU telemetry sensors to 3D Mixamo avatar bones in real-time.
               </p>
             </div>
           </div>
 
           <div class="flex items-center gap-2.5 flex-wrap">
-            <label class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-white/10 text-xs font-mono cursor-pointer select-none">
-              <input type="checkbox" id="chkAutoMap" ${this.autoMapOnShake ? 'checked' : ''} class="accent-indigo-500 rounded w-4 h-4 cursor-pointer" />
-              <span>Auto-Select Shaken</span>
-            </label>
-
             <button id="btnExportJson" class="px-3 py-1.5 rounded-xl text-xs font-semibold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/30 border border-cyan-500/30 transition-all flex items-center gap-1" title="Export mapping to JSON file">
               <span>📥 Export JSON</span>
             </button>
@@ -89,13 +83,13 @@ export class CalibrationPage {
                 <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
                 Active IMU Sensors (<span id="activeSensorCount">0</span>)
               </h3>
-              <span class="text-[11px] text-slate-400 font-mono">Shake to select</span>
+              <span class="text-[11px] text-slate-400 font-mono">Click card to target</span>
             </div>
 
             <!-- Scrollable Window Panel for Sensors -->
             <div class="glass-panel p-3.5 rounded-3xl border border-white/10 shadow-2xl flex flex-col gap-2 min-h-[580px]">
               <div class="flex items-center justify-between px-2 pb-2 border-b border-white/10 text-[11px] font-mono text-slate-400">
-                <span>Sensor ID & Status</span>
+                <span class="font-medium">Sensor ID & Telemetry</span>
                 <span>Mapped Bone Target</span>
               </div>
 
@@ -295,9 +289,8 @@ export class CalibrationPage {
     if (!sensorToAssign) {
       const states = this.sensorDetector.getAllStates();
       if (states.length > 0) {
-        const shaking = states.find((s) => s.isShaking);
         const unmapped = states.find((s) => !this.humanModelManager.sensorBoneMap[s.name]);
-        sensorToAssign = shaking ? shaking.name : unmapped ? unmapped.name : states[0].name;
+        sensorToAssign = unmapped ? unmapped.name : states[0].name;
       } else {
         const keys = Object.keys(this.humanModelManager.sensorBoneMap);
         sensorToAssign = keys.length > 0 ? keys[0] : 'Sensor1';
@@ -354,13 +347,6 @@ export class CalibrationPage {
   }
 
   bindEvents() {
-    const chkAutoMap = this.container.querySelector('#chkAutoMap');
-    if (chkAutoMap) {
-      chkAutoMap.addEventListener('change', (e) => {
-        this.autoMapOnShake = e.target.checked;
-      });
-    }
-
     const btnReset = this.container.querySelector('#btnResetMappings');
     if (btnReset) {
       btnReset.addEventListener('click', () => {
@@ -405,14 +391,6 @@ export class CalibrationPage {
         }
       });
     }
-
-    // Sensor Shake listener hook
-    this.sensorDetector.onSensorShaken = (sensorName, intensity) => {
-      if (this.autoMapOnShake) {
-        this.selectedSensor = sensorName;
-      }
-      this.updateView();
-    };
 
     // Sensor update frame hook
     this.sensorDetector.onSensorUpdated = () => {
@@ -468,7 +446,6 @@ export class CalibrationPage {
         accMag: 0,
         gyroMag: 0,
         intensity: 0,
-        isShaking: false,
         isLive: false,
       }));
     }
@@ -481,7 +458,8 @@ export class CalibrationPage {
     if (this.selectedBadge) {
       if (this.selectedSensor) {
         const mappedBone = this.humanModelManager.sensorBoneMap[this.selectedSensor] || 'Unmapped';
-        this.selectedBadge.textContent = `Targeting: ${this.selectedSensor} (${mappedBone})`;
+        const friendlyName = BONE_FRIENDLY_NAMES[mappedBone] || mappedBone;
+        this.selectedBadge.textContent = `Targeting: ${this.selectedSensor} (${friendlyName})`;
         this.selectedBadge.className = 'text-xs font-mono font-bold px-3 py-1 rounded-full bg-indigo-600 text-white border border-indigo-400 shadow-md shadow-indigo-500/30';
       } else {
         this.selectedBadge.textContent = 'No Sensor Selected';
@@ -491,11 +469,9 @@ export class CalibrationPage {
 
     // Render scrollable sensor cards list
     this.gridContainer.innerHTML = '';
-    const availableBones = Object.keys(MIXAMO_BONES);
 
     for (const state of finalSensorList) {
       const isSelected = this.selectedSensor === state.name;
-      const isShaking = state.isShaking;
       let mappedBone = this.humanModelManager.sensorBoneMap[state.name] || '';
 
       if (!mappedBone && state.isLive) {
@@ -506,10 +482,9 @@ export class CalibrationPage {
       }
 
       const card = document.createElement('div');
+      card.id = `sensorCard-${state.name}`;
       let baseClass = 'glass-panel p-3 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col gap-2 relative shrink-0 ';
-      if (isShaking) {
-        baseClass += 'border-pink-500 bg-pink-950/40 shadow-xl shadow-pink-500/30 ring-2 ring-pink-500 animate-pulse ';
-      } else if (isSelected) {
+      if (isSelected) {
         baseClass += 'border-indigo-500 bg-indigo-950/40 shadow-lg shadow-indigo-500/20 ring-1 ring-indigo-400 ';
       } else {
         baseClass += 'border-white/10 hover:border-indigo-500/40 hover:bg-slate-900/60 ';
@@ -526,9 +501,8 @@ export class CalibrationPage {
       card.innerHTML = `
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="w-2.5 h-2.5 rounded-full shrink-0 ${isShaking ? 'bg-pink-400 animate-ping' : state.isLive ? 'bg-emerald-400' : 'bg-cyan-500'}"></span>
+            <span id="statusDot-${state.name}" class="w-2.5 h-2.5 rounded-full shrink-0 ${state.isLive ? 'bg-emerald-400' : mappedBone ? 'bg-cyan-500' : 'bg-slate-600'}"></span>
             <span class="font-mono text-xs font-bold text-white truncate">${state.name}</span>
-            ${isShaking ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-pink-600 text-white animate-bounce shrink-0">SHAKING</span>' : ''}
           </div>
 
           <select data-sensor="${state.name}" class="card-bone-select bg-slate-950 text-[11px] font-mono text-cyan-300 px-2 py-1 rounded-xl border border-white/10 focus:outline-none focus:border-indigo-500 shrink-0 max-w-[160px] truncate">
@@ -543,7 +517,7 @@ export class CalibrationPage {
               <span id="accVal-${state.name}" class="font-bold text-amber-300">${state.accMag ? state.accMag.toFixed(2) : '0.00'} m/s²</span>
             </div>
             <div class="w-full h-1 bg-slate-950 rounded-full overflow-hidden">
-              <div id="accBar-${state.name}" class="h-full bg-gradient-to-r from-emerald-500 via-amber-400 to-pink-500 transition-all duration-150" style="width: ${Math.min(100, (state.accMag / 20) * 100)}%"></div>
+              <div id="accBar-${state.name}" class="h-full bg-gradient-to-r from-emerald-500 via-amber-400 to-indigo-500 transition-all duration-150" style="width: ${Math.min(100, (state.accMag / 20) * 100)}%"></div>
             </div>
           </div>
 
@@ -645,9 +619,25 @@ export class CalibrationPage {
     for (const state of states) {
       const accVal = this.container.querySelector(`#accVal-${state.name}`);
       const accBar = this.container.querySelector(`#accBar-${state.name}`);
+      const card = this.container.querySelector(`#sensorCard-${state.name}`);
+      const dot = this.container.querySelector(`#statusDot-${state.name}`);
 
       if (accVal) accVal.textContent = `${state.accMag.toFixed(2)} m/s²`;
       if (accBar) accBar.style.width = `${Math.min(100, (state.accMag / 20) * 100)}%`;
+
+      if (card) {
+        const isSelected = this.selectedSensor === state.name;
+
+        if (isSelected) {
+          card.className = 'glass-panel p-3 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col gap-2 relative shrink-0 border-indigo-500 bg-indigo-950/40 shadow-lg shadow-indigo-500/20 ring-1 ring-indigo-400';
+          if (dot) dot.className = 'w-2.5 h-2.5 rounded-full shrink-0 bg-indigo-400';
+        } else {
+          card.className = 'glass-panel p-3 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col gap-2 relative shrink-0 border-white/10 hover:border-indigo-500/40 hover:bg-slate-900/60';
+          if (dot) dot.className = 'w-2.5 h-2.5 rounded-full shrink-0 bg-emerald-400';
+        }
+      }
     }
+
+    this.updateHighlighting();
   }
 }

@@ -124,25 +124,46 @@ npm run preview
 
 ---
 
-## 📁 Project Structure
+## 📁 Project Structure & Directory Documentation
 
-```
+Detailed documentation for each project directory and script can be found in their respective README files:
+
+| Directory | Description | Documentation Link |
+|---|---|---|
+| 💻 [**`src/`**](./src/README.md) | Application entry scripts, WebGL scene managers, WebSocket service, UI manager, axis config, and CSS styling. | 📄 [`src/README.md`](./src/README.md) |
+| 🧩 [**`src/components/`**](./src/components/README.md) | Modular 3D scene elements including Mixamo FBX rigged mannequin, 3D IMU cubes, lighting rig, floor plane, and particle background. | 📄 [`src/components/README.md`](./src/components/README.md) |
+| 🖥️ [**`src/pages/`**](./src/pages/README.md) | Application page views including the Sensor-to-Bone Kinematic Mapping Hub UI. | 📄 [`src/pages/README.md`](./src/pages/README.md) |
+| 📂 [**`public/`**](./public/README.md) | Static assets including the Mixamo `T-Pose.fbx` 3D model and `boneMapping.json` configuration file. | 📄 [`public/README.md`](./public/README.md) |
+
+```text
 BioMechanicalTwin/
-├── index.html                   # Main HTML entry with Tailwind CSS v4 HUD overlay & telemetry tray
-├── package.json                 # Project dependencies & npm scripts
-├── vite.config.js               # Vite configuration with @tailwindcss/vite plugin
-├── src/
-│   ├── main.js                  # Application entry point & service initialization
-│   ├── scene.js                 # Three.js SceneManager (Renderer, Camera, Loop, Controls)
-│   ├── imuSocket.js             # WebSocket Service (Connection, auto-reconnect, FPS calculation)
-│   ├── ui.js                    # DOM UI Manager & lil-gui controls setup
-│   ├── style.css                # Tailwind CSS v4 & custom glassmorphism styles
-│   └── components/
-│       ├── imuCube.js           # 3D IMU sensor cube mesh manager & quaternion slerp logic
-│       ├── heroObject.js        # Showcase centerpiece geometry & shadow floor plane
-│       ├── lights.js            # Studio 3-Point Lighting rig & dynamic updates
-│       └── particles.js         # Procedural 3D particle constellation background
-└── README.md                    # Project documentation
+├── index.html                   # Main HTML entry with Tailwind CSS v4 HUD overlay
+├── package.json                 # Dependencies & scripts
+├── vite.config.js               # Vite configuration
+├── README.md                    # Root documentation
+├── public/                      # 📂 Static assets & models
+│   ├── README.md                # 📄 Public directory documentation
+│   ├── T-Pose.fbx               # 3D Mixamo mannequin model
+│   └── boneMapping.json         # Default sensor-to-bone JSON mapping file
+└── src/                         # 💻 Source application code
+    ├── README.md                # 📄 Source directory documentation
+    ├── main.js                  # Main application bootstrap script
+    ├── scene.js                 # Three.js WebGL scene & camera manager
+    ├── imuSocket.js             # WebSocket streaming service & FPS stats
+    ├── sensorDetector.js        # IMU dynamics & motion intensity calculator
+    ├── ui.js                    # UI Manager & lil-gui controls
+    ├── axisConfig.js            # IMU axis transformation mapping
+    ├── style.css                # Tailwind CSS v4 & custom glassmorphism styles
+    ├── components/              # 🧩 3D scene components & mesh managers
+    │   ├── README.md            # 📄 Components directory documentation
+    │   ├── humanModel.js        # FBX mannequin bone kinematics manager
+    │   ├── imuCube.js           # 3D IMU sensor cube mesh manager
+    │   ├── heroObject.js        # Environment floor plane & showcase mesh
+    │   ├── lights.js            # Studio 3-Point lighting rig
+    │   └── particles.js         # 3D particle constellation background
+    └── pages/                   # 🖥️ View pages
+        ├── README.md            # 📄 Pages directory documentation
+        └── calibrationPage.js   # Sensor-to-Bone Kinematic Mapping Hub UI
 ```
 
 ---
@@ -150,4 +171,5 @@ BioMechanicalTwin/
 ## 📄 License
 
 MIT License - feel free to use and adapt for research, educational, and commercial projects.
+
 

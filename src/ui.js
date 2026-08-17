@@ -85,7 +85,7 @@ export class UIManager {
 
   switchPage(page) {
     const nav3DActive = 'px-3 py-1.5 rounded-xl font-semibold transition-all bg-indigo-600/90 text-white shadow-lg shadow-indigo-500/20 flex items-center gap-1.5';
-    const navCalibActive = 'px-3 py-1.5 rounded-xl font-semibold transition-all bg-pink-600/90 text-white shadow-lg shadow-pink-500/20 flex items-center gap-1.5';
+    const navCalibActive = 'px-3 py-1.5 rounded-xl font-semibold transition-all bg-cyan-600/90 text-white shadow-lg shadow-cyan-500/20 flex items-center gap-1.5';
     const navInactive = 'px-3 py-1.5 rounded-xl font-medium transition-all text-slate-300 hover:text-white hover:bg-white/10 flex items-center gap-1.5';
 
     if (page === 'calibration') {
