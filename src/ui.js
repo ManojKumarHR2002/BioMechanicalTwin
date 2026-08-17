@@ -3,6 +3,7 @@ import { MIXAMO_BONES } from './components/humanModel.js';
 import { SensorDetector } from './sensorDetector.js';
 import { CalibrationPage } from './pages/calibrationPage.js';
 import { globalAxisConfig } from './axisConfig.js';
+import { StateSaveManager } from './stateSaveManager.js';
 
 export class UIManager {
   constructor(sceneManager, imuManager, humanModelManager, socketService, lights) {
@@ -12,6 +13,7 @@ export class UIManager {
     this.socketService = socketService;
     this.lights = lights;
 
+    this.saveManager = new StateSaveManager(this.humanModelManager, this.imuManager, this.socketService);
     this.sensorDetector = new SensorDetector();
 
     this.initElements();
@@ -19,6 +21,9 @@ export class UIManager {
     this.bindSocketEvents();
     this.bindUIEvents();
     this.initLilGui();
+
+    // Auto-restore saved application state on startup
+    this.saveManager.loadState();
   }
 
   initElements() {
@@ -65,9 +70,8 @@ export class UIManager {
     this.btnCloseBoneMapping = document.getElementById('btnCloseBoneMapping');
     this.boneMappingList = document.getElementById('boneMappingList');
     this.btnSaveBoneMapping = document.getElementById('btnSaveBoneMapping');
-    this.btnModalExportJson = document.getElementById('btnModalExportJson');
-    this.btnModalImportJson = document.getElementById('btnModalImportJson');
-    this.modalJsonFileInput = document.getElementById('modalJsonFileInput');
+    this.btnModalSaveState = document.getElementById('btnModalSaveState');
+    this.btnModalResetState = document.getElementById('btnModalResetState');
     // Navigation elements
     this.btnNav3D = document.getElementById('btnNav3D');
     this.btnNavCalibration = document.getElementById('btnNavCalibration');
@@ -79,7 +83,8 @@ export class UIManager {
     this.calibrationPage = new CalibrationPage(
       this.calibrationPageContainer,
       this.humanModelManager,
-      this.sensorDetector
+      this.sensorDetector,
+      this.saveManager
     );
   }
 
@@ -312,31 +317,22 @@ export class UIManager {
     if (this.btnSaveBoneMapping && this.boneMappingModal) {
       this.btnSaveBoneMapping.addEventListener('click', () => {
         this.saveBoneMappingFromModal();
+        if (this.saveManager) this.saveManager.saveState();
         this.boneMappingModal.classList.add('hidden');
       });
     }
 
-    if (this.btnModalExportJson) {
-      this.btnModalExportJson.addEventListener('click', () => {
-        this.humanModelManager.downloadMappingJson();
+    if (this.btnModalSaveState) {
+      this.btnModalSaveState.addEventListener('click', () => {
+        if (this.saveManager) this.saveManager.saveState();
       });
     }
 
-    if (this.btnModalImportJson && this.modalJsonFileInput) {
-      this.btnModalImportJson.addEventListener('click', () => {
-        this.modalJsonFileInput.click();
-      });
-
-      this.modalJsonFileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          try {
-            await this.humanModelManager.loadMappingFromFile(file);
-            this.openBoneMappingModal();
-          } catch (err) {
-            console.error('[UIManager] Error importing modal JSON mapping:', err);
-          }
-          this.modalJsonFileInput.value = '';
+    if (this.btnModalResetState) {
+      this.btnModalResetState.addEventListener('click', () => {
+        if (this.saveManager) {
+          this.saveManager.resetToDefaults();
+          this.openBoneMappingModal();
         }
       });
     }

@@ -152,6 +152,7 @@ BioMechanicalTwin/
     ├── imuSocket.js             # WebSocket streaming service & FPS stats
     ├── sensorDetector.js        # IMU dynamics & motion intensity calculator
     ├── ui.js                    # UI Manager & lil-gui controls
+    ├── stateSaveManager.js      # Persistent state save & auto-load manager
     ├── axisConfig.js            # IMU axis transformation mapping
     ├── style.css                # Tailwind CSS v4 & custom glassmorphism styles
     ├── components/              # 🧩 3D scene components & mesh managers

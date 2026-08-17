@@ -25,10 +25,11 @@ export const BONE_FRIENDLY_NAMES = {
 };
 
 export class CalibrationPage {
-  constructor(containerElement, humanModelManager, sensorDetector) {
+  constructor(containerElement, humanModelManager, sensorDetector, saveManager) {
     this.container = containerElement;
     this.humanModelManager = humanModelManager;
     this.sensorDetector = sensorDetector;
+    this.saveManager = saveManager;
 
     this.selectedSensor = null;
     this._toastTimer = null;
@@ -58,17 +59,21 @@ export class CalibrationPage {
           </div>
 
           <div class="flex items-center gap-2.5 flex-wrap">
-            <button id="btnExportJson" class="px-3 py-1.5 rounded-xl text-xs font-semibold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/30 border border-cyan-500/30 transition-all flex items-center gap-1" title="Export mapping to JSON file">
-              <span>📥 Export JSON</span>
+            <span class="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-xl border border-emerald-500/30 flex items-center gap-1.5" title="Auto-saves mappings & settings to Local Storage">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Auto-Save Active</span>
+            </span>
+
+            <button id="btnSaveState" class="px-3 py-1.5 rounded-xl text-xs font-semibold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/30 border border-cyan-500/30 transition-all flex items-center gap-1" title="Explicitly save state to Local Storage">
+              <span>💾 Save State</span>
             </button>
 
-            <button id="btnImportJson" class="px-3 py-1.5 rounded-xl text-xs font-semibold text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/30 border border-purple-500/30 transition-all flex items-center gap-1" title="Import mapping from JSON file">
-              <span>📤 Import JSON</span>
+            <button id="btnLoadState" class="px-3 py-1.5 rounded-xl text-xs font-semibold text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/30 border border-purple-500/30 transition-all flex items-center gap-1" title="Restore saved state from Local Storage">
+              <span>📥 Load Saved</span>
             </button>
-            <input type="file" id="jsonFileInput" accept=".json" class="hidden" />
 
-            <button id="btnResetMappings" class="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-300 hover:text-white bg-rose-500/10 hover:bg-rose-500/30 border border-rose-500/30 transition-all">
-              Reset
+            <button id="btnResetMappings" class="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-300 hover:text-white bg-rose-500/10 hover:bg-rose-500/30 border border-rose-500/30 transition-all" title="Reset state to initial defaults">
+              🔄 Reset Defaults
             </button>
           </div>
         </div>
@@ -300,6 +305,9 @@ export class CalibrationPage {
 
     if (sensorToAssign && boneKey) {
       this.humanModelManager.setSensorBoneMapping(sensorToAssign, boneKey);
+      if (this.saveManager) {
+        this.saveManager.saveState();
+      }
       const friendlyName = BONE_FRIENDLY_NAMES[boneKey] || boneKey;
       this.showToast(`Mapped ${sensorToAssign} → ${friendlyName}`);
       this.updateView();
@@ -347,36 +355,41 @@ export class CalibrationPage {
   }
 
   bindEvents() {
+    const btnSaveState = this.container.querySelector('#btnSaveState');
+    if (btnSaveState) {
+      btnSaveState.addEventListener('click', () => {
+        if (this.saveManager) {
+          this.saveManager.saveState();
+          this.showToast('💾 Application State Saved!');
+        }
+      });
+    }
+
+    const btnLoadState = this.container.querySelector('#btnLoadState');
+    if (btnLoadState) {
+      btnLoadState.addEventListener('click', () => {
+        if (this.saveManager) {
+          const success = this.saveManager.loadState();
+          if (success) {
+            this.showToast('📥 Saved State Restored!');
+            this.updateView();
+          } else {
+            this.showToast('⚠️ No Saved State Found');
+          }
+        }
+      });
+    }
+
     const btnReset = this.container.querySelector('#btnResetMappings');
     if (btnReset) {
       btnReset.addEventListener('click', () => {
-        this.humanModelManager.resetMapping();
-        this.updateView();
-      });
-    }
-
-    const btnExportJson = this.container.querySelector('#btnExportJson');
-    if (btnExportJson) {
-      btnExportJson.addEventListener('click', () => {
-        this.humanModelManager.downloadMappingJson();
-      });
-    }
-
-    const btnImportJson = this.container.querySelector('#btnImportJson');
-    const jsonFileInput = this.container.querySelector('#jsonFileInput');
-    if (btnImportJson && jsonFileInput) {
-      btnImportJson.addEventListener('click', () => jsonFileInput.click());
-      jsonFileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          try {
-            await this.humanModelManager.loadMappingFromFile(file);
-            this.updateView();
-          } catch (err) {
-            console.error('[CalibrationPage] Error reading JSON mapping file:', err);
-          }
-          jsonFileInput.value = '';
+        if (this.saveManager) {
+          this.saveManager.resetToDefaults();
+        } else {
+          this.humanModelManager.resetMapping();
         }
+        this.showToast('🔄 State Reset to Defaults');
+        this.updateView();
       });
     }
 
@@ -534,6 +547,9 @@ export class CalibrationPage {
           e.stopPropagation();
           const selectedBone = e.target.value;
           this.humanModelManager.setSensorBoneMapping(state.name, selectedBone);
+          if (this.saveManager) {
+            this.saveManager.saveState();
+          }
           this.updateView();
         });
         selectEl.addEventListener('click', (e) => e.stopPropagation());

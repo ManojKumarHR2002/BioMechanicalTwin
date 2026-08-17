@@ -16,6 +16,7 @@ This directory contains the primary JavaScript source code, core execution manag
 | [`imuSocket.js`](./imuSocket.js) | **`IMUSocketService`**: Handles WebSocket connections, auto-reconnection attempts, payload parsing, frame counters, and real-time FPS calculations. |
 | [`sensorDetector.js`](./sensorDetector.js) | **`SensorDetector`**: Processes telemetry frames to compute acceleration magnitude ($m/s^2$), angular velocity ($deg/s$), jerk dynamics, and sensor motion intensity metrics. |
 | [`ui.js`](./ui.js) | **`UIManager`**: Manages HUD elements, page navigation (3D Viewport ↔ Sensor Mapping Hub), visibility toggles, modal dialogs, and `lil-gui` controls. |
+| [`stateSaveManager.js`](./stateSaveManager.js) | **`StateSaveManager`**: Centralizes persistent state saving, auto-saving on changes, and auto-restoration across sessions for sensor bone mappings, WebSocket connection settings, and UI toggles using `localStorage`. |
 | [`axisConfig.js`](./axisConfig.js) | **`globalAxisConfig`**: Stores coordinate axis transformation definitions for mapping physical IMU sensor axes to standard Three.js world axes. |
 | [`style.css`](./style.css) | Primary CSS styling file combining Tailwind CSS v4, custom glassmorphism utilities, glow effects, and typography overrides. |
 
