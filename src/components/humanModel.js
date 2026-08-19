@@ -425,23 +425,28 @@ export class HumanModelManager {
   resetToTPose() {
     if (!this.model) return;
 
-    // Force all bones back to their initial rest T-pose quaternions
+    // 1. Reset all bones to their original T-pose rotations
     for (const [boneName, bone] of this.bones) {
       const restQuat = this.boneRestQuaternions.get(boneName);
+
       if (restQuat) {
         bone.quaternion.copy(restQuat);
       }
     }
 
-    // Reset sensor relative quaternions to identity
+    // 2. Reset sensor calibration/reference state
     for (const [_, state] of this.sensorStates) {
+      // The current raw sensor orientation becomes the new reference
       if (state.lastRawQuat && state.lastRawQuat.lengthSq() > 0) {
         state.zeroQuat.copy(state.lastRawQuat);
       }
-      state.targetQuat.set(0, 0, 0, 1);
-      state.currentQuat.set(0, 0, 0, 1);
+
+      // No relative movement immediately after reset
+      state.targetQuat.identity();
+      state.currentQuat.identity();
     }
 
+    // 3. Update skeleton visualization
     if (this.skeletonHelper && this.showSkeleton) {
       this.skeletonHelper.update();
     }
@@ -470,47 +475,67 @@ export class HumanModelManager {
   update(time, delta) {
     if (!this.model) return;
 
-    // Reset all bones to rest T-pose first
-    for (const [boneName, bone] of this.bones) {
-      const restQuat = this.boneRestQuaternions.get(boneName);
-      if (restQuat) {
-        bone.quaternion.copy(restQuat);
-      }
-    }
-
-    // Apply sensor world rotations
     for (const [sensorName, boneKey] of Object.entries(this.sensorBoneMap)) {
       const state = this.sensorStates.get(sensorName);
       const bone = this.getBone(boneKey);
 
       if (!state || !bone) continue;
 
-      // Smooth the sensor WORLD rotation
-      state.currentQuat.slerp(state.targetQuat, this.slerpFactor);
+      // Smooth sensor orientation
+      state.currentQuat.slerp(
+        state.targetQuat,
+        this.slerpFactor
+      );
 
-      // Make sure parent's world transform is current
+      // T-pose/local rotation
+      const restQuat =
+        this.boneRestQuaternions.get(boneKey);
+
+      if (!restQuat) continue;
+
       if (bone.parent) {
         bone.parent.updateWorldMatrix(true, false);
 
-        // Parent's GLOBAL/WORLD rotation
+        // Parent world rotation
         const parentWorldQuat = new THREE.Quaternion();
         bone.parent.getWorldQuaternion(parentWorldQuat);
 
-        // Sensor gives GLOBAL/WORLD rotation
-        const sensorWorldQuat = state.currentQuat.clone();
+        // Sensor world rotation
+        const sensorWorldQuat =
+          state.currentQuat.clone();
 
-        // Convert world rotation -> bone local rotation
-        //
-        // local = inverse(parentWorld) * world
-        const localQuat = parentWorldQuat
+        // Convert sensor world rotation to local space
+        const sensorLocalQuat = parentWorldQuat
           .clone()
           .invert()
           .multiply(sensorWorldQuat);
 
-        bone.quaternion.copy(localQuat);
+        // Apply sensor rotation ON TOP of T-pose rotation
+        const finalQuat = restQuat
+          .clone()
+          .multiply(sensorLocalQuat);
+
+        bone.quaternion.copy(finalQuat);
+
+        // const restQuat = this.boneRestQuaternions.get(boneKey);
+
+        // if (!restQuat) continue;
+
+        // const sensorDelta = state.currentQuat.clone();
+
+        // const finalQuat = restQuat
+        //   .clone()
+        //   .multiply(sensorDelta);
+
+        // bone.quaternion.copy(finalQuat);
+
       } else {
-        // Root bone has no parent, so world == local
-        bone.quaternion.copy(state.currentQuat);
+        // Root bone
+        const finalQuat = restQuat
+          .clone()
+          .multiply(state.currentQuat);
+
+        bone.quaternion.copy(finalQuat);
       }
     }
 

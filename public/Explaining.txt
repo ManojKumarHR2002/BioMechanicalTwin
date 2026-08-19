@@ -1,0 +1,1362 @@
+﻿================================================================================
+  BIOMECHANICAL TWIN - Complete Project Explanation
+  Written: 2026-08-19
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+1.  What is this project?
+2.  How does it work? (Big picture flow)
+3.  Project folder structure
+4.  Root-level files (index.html, package.json, vite.config.js)
+5.  /public  - Static assets
+6.  /src/main.js        - Application entry point
+7.  /src/scene.js       - 3D rendering engine
+8.  /src/ui.js          - Master UI controller
+9.  /src/imuSocket.js   - WebSocket / sensor data receiver
+10. /src/sensorDetector.js  - Motion analysis engine
+11. /src/stateSaveManager.js - Save / load / reset state
+12. /src/axisConfig.js  - Coordinate system converter
+13. /src/components/humanModel.js  - Rigged 3D human avatar
+14. /src/components/imuCube.js     - 3D sensor cubes
+15. /src/components/lights.js      - Studio lighting rig
+16. /src/components/heroObject.js  - Decorative 3D centerpiece
+17. /src/components/particles.js   - Background star particles
+18. /src/pages/calibrationPage.js  - Sensor mapping page
+19. Full data flow (sensor hardware to avatar on screen)
+20. Key concepts glossary
+
+
+================================================================================
+1. WHAT IS THIS PROJECT?
+================================================================================
+
+BioMechanicalTwin is a real-time 3D motion capture visualizer that runs
+entirely in a web browser. You attach physical IMU (Inertial Measurement Unit)
+sensor chips to a person's body parts (arm, leg, spine, etc.), and this app
+shows a 3D human avatar that mirrors those movements live.
+
+Simple analogy:
+  - Strap small electronic sensor chips to your arm, leg, spine, etc.
+  - The chips measure how fast you are rotating and accelerating in 3D space.
+  - They stream that data over Wi-Fi to this web app every ~30-100 times/second.
+  - The app rotates the matching skeleton bones in a 3D human model to match
+    the sensor orientation in real-time.
+  - You see the avatar move exactly like the person wearing the sensors.
+
+This is a "Digital Twin" - a virtual copy of a real physical object (a human
+body) that mirrors it in real-time using sensor data.
+
+Real-world use cases:
+  - Sports biomechanics and injury analysis
+  - Physical therapy / rehabilitation monitoring
+  - Motion capture for character animation
+  - Ergonomics and posture research
+  - Robotics / exoskeleton control research
+
+
+================================================================================
+2. HOW DOES IT WORK? (Big Picture)
+================================================================================
+
+Complete chain of events from physical sensor to moving avatar on screen:
+
+  [PHYSICAL IMU SENSOR HARDWARE]
+    Measures rotation (gyroscope) and linear acceleration (accelerometer).
+    Fuses them into a quaternion (4 numbers that represent 3D orientation).
+         |
+         v
+  [Wi-Fi / WebSocket Server at ws://192.168.1.144:3000/ws]
+    A server (e.g. Raspberry Pi or PC) receives sensor data and broadcasts
+    it as JSON messages over a WebSocket connection.
+         |
+         v
+  [imuSocket.js]
+    Connects to the server, receives JSON frames, counts them, calculates FPS.
+         |
+         v
+  [ui.js - onFrameReceived handler]
+    Receives every frame. Normalizes the sensor data format (handles multiple
+    possible JSON structures). Updates the live HUD table. Then fans out to:
+         |
+         +--------> [imuCube.js]         Rotates the 3D colored sensor cubes
+         |
+         +--------> [humanModel.js]      Rotates skeleton bones of the avatar
+         |
+         +--------> [sensorDetector.js]  Computes motion intensity / shaking
+                         |
+                         v
+                    [calibrationPage.js] Updates live sensor activity gauges
+         |
+         v
+  [scene.js - animate() loop running at ~60 FPS]
+    Every 16ms: interpolates rotations smoothly, renders everything to screen.
+
+
+================================================================================
+3. PROJECT FOLDER STRUCTURE
+================================================================================
+
+BioMechanicalTwin/
+|
++-- index.html              <- The single HTML page (all UI lives here)
++-- package.json            <- Node.js dependencies and build scripts
++-- vite.config.js          <- Build tool configuration
+|
++-- public/                 <- Static files served directly to the browser
+|   +-- T-Pose.fbx          <- Default 3D human model (~2MB Mixamo FBX)
+|   +-- boneMapping.json    <- Default sensor-to-bone mapping
+|   +-- Explaining.txt      <- THIS FILE
+|   +-- README.md
+|
++-- src/                    <- All JavaScript application source code
+    +-- main.js             <- Entry point: boots all systems in order
+    +-- scene.js            <- Three.js engine, camera, renderer, render loop
+    +-- ui.js               <- Master UI: HUD, buttons, events, panels
+    +-- imuSocket.js        <- WebSocket service (sensor data streaming)
+    +-- sensorDetector.js   <- Motion intensity and shake detection
+    +-- stateSaveManager.js <- Save/load settings to browser localStorage
+    +-- axisConfig.js       <- IMU axis remapping / coordinate transforms
+    +-- style.css           <- Global CSS (glass panels, animations, fonts)
+    |
+    +-- components/         <- Reusable 3D scene objects
+    |   +-- humanModel.js   <- Rigged 3D avatar (FBX + bone control)
+    |   +-- imuCube.js      <- 3D sensor cube visualizers (one per sensor)
+    |   +-- lights.js       <- Professional 3-point studio lighting
+    |   +-- heroObject.js   <- Decorative 3D centerpiece (not in main flow)
+    |   +-- particles.js    <- Background star/constellation particles
+    |
+    +-- pages/              <- Full-page UI views (pure HTML panels)
+        +-- calibrationPage.js  <- Sensor-to-bone mapping interface
+
+
+================================================================================
+4. ROOT-LEVEL FILES
+================================================================================
+
+---- index.html ---------------------------------------------------------------
+The single HTML page the browser loads. It contains:
+  - A <canvas id="webgl"> element: Three.js renders the 3D scene here.
+  - The HUD (Heads-Up Display):
+      * Connection status badge (CONNECTED / CONNECTING / DISCONNECTED)
+      * FPS counter, frame counter, sensor count, timestamp
+      * Live telemetry data table (one row per sensor: acc XYZ, gyro XYZ, quat)
+      * WebSocket URL input + Connect button
+      * Zero Calibration button
+      * Toggle Avatar, Toggle Cubes, Toggle Skeleton buttons
+      * Upload FBX button, Bone Mapping button
+      * Navigation buttons (3D View | Calibration)
+  - A modal dialog: the Bone Mapping popup panel
+  - A container div: where calibrationPage.js renders its HTML
+  - Google Fonts links, Tailwind CSS
+  - <script type="module" src="/src/main.js"> to start the app
+
+---- package.json -------------------------------------------------------------
+Node.js project configuration. Key fields:
+  Dependencies (shipped with the app):
+    three (v0.173):   The 3D WebGL graphics library. Does all rendering.
+    lil-gui (v0.20):  A compact debug control panel widget.
+  Dev Dependencies (build tools only):
+    vite:             Fast development server + bundler (run: npm run dev)
+    tailwindcss:      Utility-class CSS framework for the HUD styling.
+  Scripts:
+    npm run dev      -> Start local dev server with hot-reload
+    npm run build    -> Bundle for production deployment
+    npm run preview  -> Preview the production bundle locally
+
+---- vite.config.js -----------------------------------------------------------
+Configures the Vite build tool to use the Tailwind CSS v4 plugin
+so Tailwind utility classes in HTML are processed and bundled.
+
+
+================================================================================
+5. /public - STATIC ASSETS
+================================================================================
+
+---- T-Pose.fbx ---------------------------------------------------------------
+A 3D character model in the FBX (Filmbox) format from Mixamo (Adobe's free
+3D character rigging service). "T-Pose" means the character stands upright
+with arms stretched horizontally - forming a T shape.
+
+This is the industry standard "rest pose" for rigged characters. The model
+has a full skeleton of bones (hierarchical structure, like a real human
+skeleton) that control the mesh surface. When sensor data arrives, the code
+rotates these bones to animate the character.
+
+File size: ~2MB
+
+---- boneMapping.json ---------------------------------------------------------
+A JSON config file defining the default assignment of physical sensors to
+avatar bones. The app loads this file on first launch (before any user
+customization is saved).
+
+Default contents:
+  Sensor1 -> RightForeArm   (right forearm)
+  Sensor2 -> RightArm       (right upper arm)
+  Sensor3 -> LeftForeArm    (left forearm)
+  Sensor4 -> LeftArm        (left upper arm)
+  Sensor5 -> Spine2         (chest / upper spine)
+  Sensor6 -> RightLeg       (right shin)
+  Sensor7 -> LeftLeg        (left shin)
+
+This file is only used as a FALLBACK. The browser's localStorage is the
+primary source. Once the user has saved a mapping, this file is ignored.
+
+
+================================================================================
+6. /src/main.js - APPLICATION ENTRY POINT
+================================================================================
+
+This is the FIRST file that executes when the app loads. Its only job is to
+instantiate every major system in the correct order and wire them together.
+
+HOW IT WORKS:
+  Registers a listener for the DOMContentLoaded browser event (fires when
+  HTML is fully parsed). When that fires, it runs this sequence:
+
+  Step 1: const sceneManager = new SceneManager(canvas)
+    Creates the 3D WebGL renderer, perspective camera, orbit controls,
+    animation loop, ground plane, grid, and axes helper.
+
+  Step 2: const lights = new LightSetup(sceneManager.scene)
+    Adds the 3-point professional studio lighting rig to the 3D scene.
+
+  Step 3: const imuManager = new IMUCubeManager(sceneManager.scene)
+    Creates the floating 3D colored sensor cube objects (one per sensor).
+
+  Step 4: const humanModelManager = new HumanModelManager(sceneManager.scene)
+    Loads the T-Pose.fbx model, sets up bones, and prepares for animation.
+
+  Step 5: sceneManager.addUpdateCallback((time, delta) => { ... })
+    Registers per-frame callbacks. Every animation frame (~16ms), the
+    scene engine will call:
+      imuManager.update(time, delta)       - smooth cube rotation
+      humanModelManager.update(time, delta) - smooth bone animation
+      lights.update(time)                  - orbit rim light
+
+  Step 6: const socketService = new IMUSocketService('ws://192.168.1.144:3000/ws')
+    socketService.connect()
+    Connects to the hardware sensor WebSocket server.
+
+  Step 7: new UIManager(sceneManager, imuManager, humanModelManager, socketService, lights)
+    Initializes the entire user interface: HUD elements, buttons, calibration
+    page, sensor table, bone mapping modal, and lil-gui debug panel.
+    Also auto-loads saved state from localStorage.
+
+
+================================================================================
+7. /src/scene.js - 3D RENDERING ENGINE (class SceneManager)
+================================================================================
+
+The core 3D engine. Manages the WebGL renderer, camera, user orbit controls,
+and the animation loop. All other components add objects INTO the scene that
+SceneManager renders.
+
+PROPERTIES:
+  canvas          - The HTML <canvas> element WebGL renders into
+  scene           - The Three.js Scene (the 3D "world" containing all objects)
+  camera          - PerspectiveCamera (the virtual "eye" looking at the scene)
+  renderer        - WebGLRenderer (converts 3D geometry to pixels on screen)
+  controls        - OrbitControls (mouse rotate/zoom/pan)
+  viewHelper      - 3D orientation gizmo (the X/Y/Z cube visible in a corner)
+  axesHelper      - Colored axis lines at world origin (+X=Red, +Y=Green, +Z=Blue)
+  clock           - THREE.Clock tracking elapsed/delta time
+  fps             - Current rendering frames per second
+  updateCallbacks - Array of functions called every animation frame
+
+FUNCTIONS:
+
+  constructor(canvas)
+    Runs: initRenderer, initScene, initCamera, initControls,
+          initViewHelper, initListeners, then starts animate().
+
+  initRenderer()
+    Creates the WebGLRenderer with:
+      antialiasing ON          - smooth polygon edges
+      ACES Filmic tone mapping - cinematic color response
+      PCF Soft shadow maps     - realistic soft-edged shadows
+      Pixel ratio capped at 2x - prevents blurry renders on high-DPI screens
+      autoClear = false        - needed so the ViewHelper gizmo can render on top
+
+  initScene()
+    Creates:
+      Scene background: #09090b (near-black dark)
+      Ground plane mesh: 50x50 units, ShadowMaterial (invisible but receives shadows)
+      Grid helper: 30x30 lines, indigo/dark-slate colors, 25% opacity
+      AxesHelper: 1.5-unit colored axis lines at origin
+
+  initCamera()
+    PerspectiveCamera: 50 degree FOV, near=0.1, far=100
+    Positioned at (0, 2.5, 6.5) - slightly above and in front of the avatar
+
+  initControls()
+    OrbitControls settings:
+      enableDamping = true, dampingFactor = 0.05  (smooth inertia)
+      maxPolarAngle = PI/2 + 0.1  (cannot go below ground level)
+      minDistance = 2.5, maxDistance = 100  (zoom limits)
+      target = (0, 0.5, 0)  (orbits around the avatar's center)
+
+  initViewHelper()
+    Creates a ViewHelper gizmo that shows current camera orientation.
+    Clicking on the gizmo's axis handles snaps camera to that orthographic view.
+    Connected to canvas pointerdown events.
+
+  initListeners()
+    window.addEventListener('resize', ...) - updates camera + renderer on resize
+
+  setWorldAxesVisible(visible)
+    Shows or hides the colored world origin axes helper.
+
+  onResize()
+    Updates camera aspect ratio and renderer pixel dimensions on window resize.
+
+  addUpdateCallback(fn)
+    Registers a function to be called every animation frame with (time, delta).
+    This is how imuManager, humanModelManager, and lights hook into the loop.
+
+  resetCamera()
+    Moves camera back to default position (0, 2.5, 6.5) and resets orbit target.
+
+  animate()  [CALLED ~60 TIMES PER SECOND]
+    The requestAnimationFrame animation loop. Every frame:
+      1. Gets delta (time since last frame) and elapsedTime from the Clock.
+      2. Counts frames; every 500ms recalculates FPS and fires onFpsUpdate.
+      3. controls.update() - applies orbit damping physics.
+      4. If viewHelper is animating (camera snap transition), updates it.
+      5. Calls all registered updateCallbacks(elapsedTime, delta).
+      6. renderer.clear() - clears color/depth buffers.
+      7. renderer.render(scene, camera) - draws the 3D scene.
+      8. viewHelper.render(renderer) - overlays the gizmo on top.
+
+
+================================================================================
+8. /src/ui.js - MASTER UI CONTROLLER (class UIManager)
+================================================================================
+
+The brain of the user interface. Connects every HTML button/element in
+index.html to the 3D systems. Also owns SensorDetector and StateSaveManager.
+
+CONSTRUCTOR:
+  Receives: sceneManager, imuManager, humanModelManager, socketService, lights
+  Creates: StateSaveManager, SensorDetector
+  Calls in order: initElements, initCalibrationPage, bindSocketEvents,
+                  bindUIEvents, initLilGui, then saveManager.loadState()
+
+FUNCTIONS:
+
+  initElements()
+    Queries the DOM for every interactive element by ID and stores references:
+    statusElement, connectionElement, frameCountElement, fpsElement,
+    frameTimeElement, sensorCountElement, sensorTable, jsonOutput,
+    jsonContainer, wsUrlInput, btnConnect, btnZero, btnToggleJson,
+    trayContent, trayToggleLabel, trayToggleIcon, btnToggleTray, trayHeader,
+    btnToggleModel, btnToggleCubes, btnSkeletonToggle, btnUploadFbx,
+    fbxFileInput, btnBoneMapping, boneMappingModal, btnCloseBoneMapping,
+    boneMappingList, btnSaveBoneMapping, btnModalSaveState, btnModalResetState,
+    btnNav3D, btnNavCalibration, calibrationPageContainer.
+
+  initCalibrationPage()
+    Instantiates CalibrationPage and mounts it in calibrationPageContainer.
+
+  switchPage(page)
+    Switches between the '3d' and 'calibration' views:
+      '3d'          -> Shows WebGL canvas, hides calibration div, sets nav styles
+      'calibration' -> Hides WebGL canvas, shows calibration div, sets nav styles
+                       Also calls calibrationPage.updateView() to refresh it.
+
+  bindSocketEvents()
+    Hooks into the socket service's three callback slots:
+
+    onStatusChange(status):
+      Updates the status badge color and connection text:
+        CONNECTED    -> emerald green badge
+        CONNECTING   -> amber yellow badge
+        DISCONNECTED -> rose red badge
+
+    onFpsUpdate(fps):
+      Updates the FPS counter display (desktop + mobile).
+
+    onFrameReceived(frame, sensors):
+      Called every time a new sensor data frame arrives (~30-100x/sec).
+      This is the HOTTEST code path in the app.
+      Steps:
+        1. Updates frame counter display.
+        2. Updates timestamp display.
+        3. NORMALIZES the incoming data - the JSON can come in three formats:
+             Format A: sensors is an Array  -> converts to {name: data} map
+             Format B: sensors is an Object -> uses it directly
+             Format C: frame itself has qw/ax fields -> wraps as {Sensor1: frame}
+           All three become a standardized { sensorName: sensorData } object.
+        4. Updates sensor count display.
+        5. Calls updateSensorTable() to refresh the live data table.
+        6. For each sensor in the normalized map:
+             imuManager.updateSensorData(name, data)     -> rotates 3D cubes
+             humanModelManager.updateSensorData(name, data) -> drives bones
+             sensorDetector.processSensorFrame(name, data)  -> motion analysis
+        7. If JSON panel is open, updates its text content.
+
+  bindUIEvents()
+    Attaches event listeners to all buttons:
+      btnConnect       -> calls socketService.setUrl(newUrl) to reconnect
+      btnZero          -> calls imuManager.calibrateZero() and
+                          humanModelManager.calibrateZero()
+      btnNav3D         -> switchPage('3d')
+      btnNavCalibration -> switchPage('calibration')
+      btnToggleModel   -> toggles humanModelManager visibility
+      btnToggleCubes   -> toggles imuManager visibility
+      btnSkeletonToggle -> toggles humanModelManager skeleton wireframe
+      btnUploadFbx     -> triggers hidden file input click
+      fbxFileInput     -> on file selected, calls humanModelManager.loadFBXFromFile()
+      btnBoneMapping   -> calls openBoneMappingModal()
+      btnCloseBoneMapping -> hides the modal
+      btnSaveBoneMapping -> calls saveBoneMappingFromModal() + saveManager.saveState()
+      btnModalSaveState -> saveManager.saveState()
+      btnModalResetState -> saveManager.resetToDefaults() + reopens modal
+      btnToggleJson    -> toggles JSON raw data panel visibility
+      btnToggleTray / trayHeader -> collapses or expands the bottom data tray
+
+  openBoneMappingModal()
+    Dynamically generates the bone mapping modal content:
+      - Lists all currently active sensor names (falls back to Sensor1..7).
+      - For each sensor, creates a row with a <select> dropdown listing all
+        20 Mixamo bone options, with the currently assigned bone pre-selected.
+      - Displays the modal.
+
+  saveBoneMappingFromModal()
+    Reads all dropdown values from the open modal and calls
+    humanModelManager.setSensorBoneMapping(sensorName, boneKey) for each.
+
+  updateSensorTable(sensors)
+    Rebuilds the live telemetry table in the HUD.
+    For each sensor, renders a <tr> row containing:
+      Sensor ID | Mapped Bone | ax | ay | az | gx | gy | gz | qw | qx | qy | qz
+    Handles all possible JSON key names:
+      ax / accX / acc[0], gx / gyroX / gyro[0],
+      qw / w / q0, qx / x / q1, etc.
+
+  formatValue(val)
+    Utility: Returns a number formatted to 4 decimal places,
+             or '-' if the value is null/undefined/empty.
+
+  initLilGui()
+    Creates the collapsible lil-gui debug panel (top-right corner).
+    Four control folders:
+
+    "Mixamo Human Rig" folder:
+      Show Human Model   - boolean toggle for avatar visibility
+      3D Skeleton Helper - boolean toggle for bone wireframe
+      Smoothing (Slerp)  - slider 0.05 to 1.0 for slerpFactor
+      Zero Reference btn - zero-calibrates all sensors
+
+    "IMU Motion Settings" folder:
+      Show 3D Cubes      - boolean toggle for sensor cube visibility
+      Smoothing (Slerp)  - slider for cube rotation smoothing
+      Acc Pos Bump       - boolean: whether cubes bob with Y acceleration
+
+    "Global Axes & Orientation" folder:
+      Axis Preset        - dropdown: Standard/Z-Up/Unity/Aircraft/Custom
+      IMU X -> World     - dropdown: +X/-X/+Y/-Y/+Z/-Z remapping
+      IMU Y -> World     - same for Y axis
+      IMU Z -> World     - same for Z axis
+      Show Origin Axes   - toggle for world coordinate axes helper
+
+    "Camera & 3-Point Lighting" folder:
+      Reset Camera       - restores default camera position
+      3-Point Preset     - dropdown: Studio Neutral/Cyberpunk Neon/Warm Sunset
+      Key Light (Spot)   - intensity slider 0-8
+      Fill Light (Soft)  - intensity slider 0-5
+      Rim Light (Kicker) - intensity slider 0-8
+
+
+================================================================================
+9. /src/imuSocket.js - WEBSOCKET SERVICE (class IMUSocketService)
+================================================================================
+
+Manages the network connection to the sensor hardware server. Receives raw
+JSON sensor data over a WebSocket (persistent real-time connection).
+
+PROPERTIES:
+  url              - WebSocket endpoint (default: ws://192.168.1.144:3000/ws)
+                     192.168.1.144 = IP of the server device on the local Wi-Fi
+                     3000 = port number  /ws = URL path
+  socket           - The active WebSocket connection object (or null)
+  status           - Current state: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED'
+  frameCount       - Total data frames received since page load
+  fps              - Sensor data frames received per second
+  latestFrame      - The most recent raw JSON frame object
+  sensors          - Parsed sensor map from the latest frame
+  onStatusChange   - Callback: fires when connection status changes
+  onFrameReceived  - Callback: fires every time a new frame arrives
+  onFpsUpdate      - Callback: fires every second with current data FPS
+
+FUNCTIONS:
+
+  constructor(url)
+    Sets all properties to initial values, starts the FPS counter interval.
+
+  setUrl(newUrl)
+    Changes the WebSocket server URL.
+    If the new URL is different and currently connected: disconnects and
+    reconnects to the new address immediately.
+
+  connect()
+    Opens a WebSocket to this.url. Does nothing if already connecting/connected.
+    Sets up four WebSocket event handlers:
+      onopen:    Sets status to CONNECTED, cancels any pending reconnect timer.
+      onmessage: Parses incoming JSON. Handles three message structures:
+                   { type:'frame', data:{sensors:{...}} }  (format A)
+                   { sensors:{...} }                        (format B)
+                   { qw:..., qx:..., ax:..., ... }          (format C - single sensor)
+                 Increments frameCount, updates fps counter, stores frame,
+                 extracts sensors object, fires onFrameReceived callback.
+      onclose:   Sets status to DISCONNECTED, schedules reconnect attempt.
+      onerror:   Logs error to console.
+
+  scheduleReconnect()
+    Sets a 2-second timeout then calls connect() again automatically.
+    The app will keep retrying indefinitely until the server comes online.
+
+  disconnect()
+    Clears reconnect timer, nulls out all socket event handlers, closes
+    the socket, sets status to DISCONNECTED.
+
+  updateStatus(newStatus)
+    Updates this.status and fires the onStatusChange callback.
+
+  startFpsCounter()
+    Starts a setInterval that fires every 1000ms. Each tick:
+      - Saves lastSecondFrames as the fps value
+      - Resets lastSecondFrames to 0
+      - Fires onFpsUpdate(fps) callback
+
+  destroy()
+    Calls disconnect() and clears the FPS counter interval.
+    Used for cleanup on page unload.
+
+
+================================================================================
+10. /src/sensorDetector.js - MOTION ANALYSIS ENGINE (class SensorDetector)
+================================================================================
+
+Analyzes raw sensor data every frame to compute motion metrics:
+how intensely the sensor is moving, and whether it is "shaking."
+
+This powers the live activity indicator bars on the Calibration Page,
+letting you visually identify which physical sensor is which by shaking it.
+
+PROPERTIES:
+  sensorStates       - Map<sensorName, stateObject> storing per-sensor metrics
+  shakeThresholdAcc  - 3.5 m/s2: acceleration deviation that triggers "shaking"
+  shakeThresholdGyro - 120 deg/s: rotation speed that triggers "shaking"
+  cooldownMs         - 1500ms: isShaking stays true for 1.5s after motion stops
+                       (prevents flickering between shaking/not-shaking)
+  onSensorUpdated    - Callback: fires every frame when any sensor data updates
+  onSensorShaken     - Callback: fires the moment a sensor STARTS shaking
+  latestShakenSensor - Name of the most recently shaken sensor
+
+FUNCTIONS:
+
+  processSensorFrame(sensorName, data)
+    The main processing function. Called for every sensor every data frame.
+
+    Step 1: Extract ax, ay, az (acceleration XYZ).
+            Supports key aliases: ax / accX / acc[0]
+
+    Step 2: Extract gx, gy, gz (gyroscope XYZ).
+            Supports: gx / gyroX / gyro[0]
+
+    Step 3: Compute vector magnitudes:
+              accMag  = sqrt(ax^2 + ay^2 + az^2)   total acceleration force
+              gyroMag = sqrt(gx^2 + gy^2 + gz^2)   total rotation speed
+
+    Step 4: Compute accDev = |accMag - gravity_reference|
+            Gravity reference is 9.81 if accMag > 4 (SI units: m/s^2)
+            or 1.0 if accMag < 4 (normalized G units).
+            At rest, accDev is near 0. Any movement increases it.
+
+    Step 5: Initialize per-sensor state if this is the first frame.
+            State object fields: name, accMag, gyroMag, intensity,
+                                 isShaking, lastShakeTime, prevAccMag, deltaAcc
+
+    Step 6: Compute deltaAcc = |accMag - prevAccMag|
+            This is a "jerk" approximation (rate of change of acceleration).
+            Spikes sharply during sudden impacts or direction changes.
+
+    Step 7: Compute intensity score (0 to 100%):
+              intensity = min(100, round(accDev*12 + gyroMag*0.3 + deltaAcc*15))
+            Blends all three signals into a single activity percentage.
+
+    Step 8: Determine if triggered (shaking):
+              isTriggered = accDev > 3.5  OR  gyroMag > 120  OR  deltaAcc > 2.2
+
+    Step 9: Update isShaking with cooldown:
+              If triggered: update lastShakeTime, set isShaking=true,
+                            fire onSensorShaken if newly triggered.
+              If not triggered: clear isShaking only after cooldownMs has passed.
+
+    Step 10: Fire onSensorUpdated(sensorStates) callback.
+
+    Returns the updated state object.
+
+  getSensorState(sensorName)
+    Returns the state object for one specific sensor by name.
+
+  getAllStates()
+    Returns Array.from(sensorStates.values()) - all sensor states as an array.
+    Used by CalibrationPage to render sensor cards.
+
+
+================================================================================
+11. /src/stateSaveManager.js - STATE PERSISTENCE (class StateSaveManager)
+================================================================================
+
+Saves and restores the application's user settings using the browser's
+localStorage API. Works like the app's persistent "memory" - settings survive
+page refreshes and browser restarts.
+
+What gets saved:
+  sensorBoneMap    - Which sensor maps to which bone (the most important setting)
+  wsUrl            - The WebSocket server address
+  isModelVisible   - Whether the 3D avatar is visible
+  isCubesVisible   - Whether the 3D sensor cubes are visible
+  showSkeleton     - Whether the bone wireframe helper is visible
+
+Storage keys:
+  'biomechanical_twin_app_state'   - Main JSON state object (current)
+  'biomechanical_twin_bone_mapping' - Legacy key (kept for backwards compatibility)
+
+FUNCTIONS:
+
+  saveState(additionalData={})
+    Builds a state object: { version, timestamp, sensorBoneMap, wsUrl,
+                              isModelVisible, isCubesVisible, showSkeleton }
+    Serializes to JSON, stores in localStorage.
+    Also writes to the legacy key.
+    Returns true on success, false on error.
+
+  loadState()
+    Reads from 'biomechanical_twin_app_state' localStorage key.
+    If not found, falls back to legacy 'biomechanical_twin_bone_mapping' key.
+    If still not found, returns false.
+    Otherwise restores:
+      1. sensorBoneMap -> applies to humanModelManager + rebuilds bone indicators
+      2. wsUrl         -> sets the WebSocket URL input field value
+      3. isModelVisible -> shows/hides the avatar
+      4. isCubesVisible -> shows/hides the sensor cubes
+      5. showSkeleton  -> shows/hides skeleton wireframe + updates button style
+    Returns the restored state object on success.
+
+  resetToDefaults()
+    Removes both localStorage keys.
+    Calls humanModelManager.resetMapping() to clear all assignments.
+    Returns true on success.
+
+
+================================================================================
+12. /src/axisConfig.js - COORDINATE SYSTEM CONVERTER (class AxisConfigManager)
+================================================================================
+
+IMU sensors have their own physical X/Y/Z axes defined by how the chip is
+oriented on the PCB. These may not align with Three.js world coordinates
+(X=right, Y=up, Z=toward-viewer). This class remaps sensor axes to world axes.
+
+EXPORTS:
+  AxisConfigManager class
+  globalAxisConfig - One singleton instance used throughout the entire app.
+
+PROPERTIES:
+  preset     - Name of currently active preset ('Standard (Three.js)', etc.)
+  axisX      - Where sensor X maps to in world: '+X'/'-X'/'+Y'/'-Y'/'+Z'/'-Z'
+  axisY      - Where sensor Y maps to in world
+  axisZ      - Where sensor Z maps to in world
+  listeners  - Array of change-listener callback functions
+
+BUILT-IN PRESETS:
+  Standard (Three.js)         : +X->+X, +Y->+Y, +Z->+Z  (identity, no change)
+  Z-Up (ROS/Unreal Engine)    : +X->+X, +Y->+Z, +Z->-Y  (Y and Z swapped)
+  Unity (Inverted Z)          : +X->+X, +Y->+Y, +Z->-Z  (Z axis flipped)
+  Aircraft (NED: North-East-Down) : +X->+Y, +Y->-Z, +Z->+X
+
+FUNCTIONS:
+
+  onChange(fn)
+    Registers a callback to fire whenever axis configuration changes.
+
+  notify()
+    Calls all registered listener functions with (this).
+
+  setPreset(presetName)
+    Applies one of the four built-in presets, updates axisX/Y/Z, fires notify().
+
+  setCustomAxis(axis, targetVal)
+    Manually overrides one axis mapping. Sets preset to 'Custom'. Fires notify().
+
+  transformQuaternion(qx, qy, qz, qw)
+    THE KEY FUNCTION. Remaps raw sensor quaternion components per the active
+    axis config and returns a normalized Three.js Quaternion.
+
+    How it works:
+      rawMap = { X: qx, Y: qy, Z: qz }
+      For each configured axis (axisX, axisY, axisZ):
+        - Parses the sign ('+' = +1, '-' = -1) and axis letter ('X'/'Y'/'Z')
+        - Picks the corresponding raw value and multiplies by the sign
+      Returns new THREE.Quaternion(outX, outY, outZ, qw).normalize()
+
+    Example: If axisY = '+Z', then the sensor's Y quaternion component
+    is placed into the world's Z position.
+
+
+================================================================================
+13. /src/components/humanModel.js - RIGGED 3D AVATAR (class HumanModelManager)
+================================================================================
+
+The most technically complex file. Loads the FBX character model, extracts
+its skeleton bones, and drives them with real-time sensor quaternions.
+
+EXPORTED CONSTANT: MIXAMO_BONES
+  Maps 20 friendly bone names to their internal Mixamo FBX bone name strings:
+    Hips            -> mixamorigHips           (pelvis root bone)
+    Spine           -> mixamorigSpine          (lower back)
+    Spine1          -> mixamorigSpine1         (mid back)
+    Spine2          -> mixamorigSpine2         (chest)
+    Neck            -> mixamorigNeck
+    Head            -> mixamorigHead
+    LeftShoulder    -> mixamorigLeftShoulder
+    LeftArm         -> mixamorigLeftArm        (upper arm)
+    LeftForeArm     -> mixamorigLeftForeArm
+    LeftHand        -> mixamorigLeftHand
+    RightShoulder   -> mixamorigRightShoulder
+    RightArm        -> mixamorigRightArm
+    RightForeArm    -> mixamorigRightForeArm
+    RightHand       -> mixamorigRightHand
+    LeftUpLeg       -> mixamorigLeftUpLeg      (thigh)
+    LeftLeg         -> mixamorigLeftLeg        (shin)
+    LeftFoot        -> mixamorigLeftFoot
+    RightUpLeg      -> mixamorigRightUpLeg
+    RightLeg        -> mixamorigRightLeg
+    RightFoot       -> mixamorigRightFoot
+
+CLASS: HumanModelManager
+
+KEY PROPERTIES:
+  bones              - Map<boneName, THREE.Bone> for fast lookup
+  boneRestQuaternions - Map<boneName, Quaternion> - initial T-pose orientations
+  sensorBoneMap      - Object { sensorName: boneFriendlyKey }
+                       e.g. { 'Sensor1': 'RightForeArm', 'Sensor2': 'RightArm' }
+  sensorStates       - Map<sensorName, {targetQuat, currentQuat, zeroQuat, lastRawQuat}>
+  slerpFactor        - 0.25 (smoothing: 0=frozen, 1=instant snap)
+  attachedIndicators - Map of small cube meshes parented to bones
+  showSkeleton       - Boolean: is the bone wireframe helper visible?
+
+FUNCTIONS:
+
+  constructor(scene)
+    Creates containerGroup, loads saved bone mapping, loads default FBX.
+
+  loadSavedMapping()  [async]
+    1. Tries localStorage key 'biomechanical_twin_bone_mapping'.
+    2. Falls back to fetching /public/boneMapping.json.
+    3. Applies whichever it finds to sensorBoneMap.
+
+  saveMapping()
+    Writes current sensorBoneMap to localStorage.
+
+  loadDefaultModel()
+    Calls loadFBXFromUrl('/T-Pose.fbx').
+
+  loadFBXFromUrl(url)
+    Asynchronously loads an FBX file from a server URL using Three.js FBXLoader.
+    Progress is logged as a percentage. On success, calls setupModel(fbx).
+
+  loadFBXFromFile(file)
+    Loads a user-uploaded local FBX file using a temporary Blob URL.
+    After loading, revokes the Blob URL to free memory.
+
+  setupModel(fbx)
+    Called after any FBX load. Complete model setup:
+      1. Removes previous model and skeleton helper from scene.
+      2. Auto-scales model to ~1.8m tall:
+           Measures bounding box height.
+           scale = 1.8 / height. Applies uniformly.
+      3. Positions model so feet touch y=0:
+           bbox.min.y gives the lowest point. Sets position.y = -bbox.min.y.
+      4. Traverses all FBX objects:
+           Meshes: castShadow=true, receiveShadow=true, calls enhanceMaterial().
+           Bones: stored in this.bones map by full Mixamo name.
+                  Also indexed by friendly name (e.g. 'RightForeArm') for
+                  easy lookup from sensorBoneMap.
+                  Initial quaternion stored in boneRestQuaternions.
+      5. Adds model to containerGroup.
+      6. Creates THREE.SkeletonHelper (bone wireframe visualizer).
+      7. Calls rebuildAttachedIndicators().
+      8. Fires onModelLoaded callback.
+
+  enhanceMaterial(mat)
+    Sets roughness=0.5, metalness=0.2 on any material for better appearance.
+
+  setSkeletonVisible(visible)
+    Shows/hides the SkeletonHelper and updates showSkeleton flag.
+
+  setVisible(visible)
+    Shows/hides the entire containerGroup and skeleton.
+
+  setViewMode(mode)
+    'avatar'   -> shows avatar mesh, hides attached IMU indicators
+    'attached' -> shows avatar mesh + shows attached indicators
+    'cubes'    -> hides avatar entirely (only sensor cubes are shown)
+
+  setSensorBoneMapping(sensorName, boneKey)
+    Assigns one sensor to one bone. If boneKey is empty, removes the mapping.
+    Calls saveMapping() and rebuildAttachedIndicators().
+
+  setSensorBoneMapBatch(mappingObj)
+    Replaces the ENTIRE mapping at once from a given object.
+
+  resetMapping()
+    Clears sensorBoneMap to empty {}.
+
+  downloadMappingJson()
+    Creates a data URI from the current mapping JSON and triggers a download.
+
+  loadMappingFromFile(file)
+    Reads a JSON file using FileReader, parses it, applies via setSensorBoneMapBatch.
+    Returns a Promise.
+
+  getBone(boneKey)
+    Looks up a bone object by friendly name (e.g. 'RightForeArm') or
+    by its Mixamo internal name. Returns null if not found.
+
+  rebuildAttachedIndicators()
+    Clears and rebuilds the mini IMU indicator meshes parented to bones:
+      - For each entry in sensorBoneMap, finds the target bone.
+      - Creates a small indigo box mesh (0.8 x 0.4 x 0.8 units, scaled to bone).
+      - Adds it as a CHILD of the bone object.
+      - Because it is a bone child, it automatically follows bone rotation.
+
+  updateSensorData(sensorName, data)
+    Called every data frame. Extracts and stores the target quaternion.
+    Does NOT modify bones directly (that happens in update()).
+    Steps:
+      1. Extract qw/qx/qy/qz from data. Supports: qw/w/q0, qx/x/q1, etc.
+         Also supports array format: data.quat = [qw, qx, qy, qz].
+      2. Apply globalAxisConfig.transformQuaternion() for coordinate remapping.
+      3. Initialize sensorState entry if first frame for this sensor.
+      4. Store raw quaternion in state.lastRawQuat (for zero calibration).
+      5. Compute calibrated target:
+           invZero = state.zeroQuat.clone().invert()
+           state.targetQuat = invZero.multiply(rawQuat)
+         This makes rotation RELATIVE to the calibration zero position.
+
+  resetToTPose()
+    Copies all boneRestQuaternions back to their bones (visual T-pose reset).
+    Resets all sensorState quaternions to identity (0,0,0,1).
+
+  calibrateZero(sensorName)
+    Records the CURRENT sensor orientation as the zero/reference pose.
+    All future rotations are computed relative to this point.
+    If sensorName is undefined, zeros ALL sensors simultaneously.
+    Calls resetToTPose() after zeroing.
+
+  update(time, delta)  [CALLED 60x PER SECOND]
+    The per-frame animation driver. Steps:
+
+    1. Reset all bones to their stored T-pose rest quaternions.
+       (This is the baseline. Every frame starts from T-pose and
+        only applies sensors that have active mappings.)
+
+    2. For each sensor-bone mapping in sensorBoneMap:
+         a. Get the sensor's state and its target bone object.
+         b. Slerp (smooth interpolate) currentQuat toward targetQuat:
+              state.currentQuat.slerp(state.targetQuat, slerpFactor)
+         c. If bone has a parent:
+              Get parent's current WORLD rotation (parentWorldQuat).
+              Compute LOCAL bone rotation:
+                localQuat = parentWorldQuat.invert() * sensorWorldQuat
+              Why? Three.js bone rotations are RELATIVE to parent bone,
+              but sensor quaternions are WORLD (absolute) rotations.
+              Converting: local = inverse(parentWorld) * world
+              Apply: bone.quaternion.copy(localQuat)
+         d. If bone is the root (no parent):
+              World rotation == local rotation.
+              Apply: bone.quaternion.copy(state.currentQuat)
+
+    3. Update SkeletonHelper if visible.
+
+
+================================================================================
+14. /src/components/imuCube.js - 3D SENSOR CUBES (class IMUCubeManager)
+================================================================================
+
+Creates and manages 3D box meshes that visually represent the physical IMU
+sensors. Each cube rotates in real-time to match its sensor's orientation.
+The color-coded faces show the X/Y/Z axes of the sensor.
+
+PROPERTIES:
+  cubes            - Map<sensorName, cubeData> for all active sensor cubes
+  containerGroup   - THREE.Group holding all cube sub-groups
+  slerpFactor      - 0.25 (rotation smoothing factor)
+  applyAccPosition - Boolean: cube bobs up/down with Y acceleration if true
+
+FUNCTIONS:
+
+  setVisible(visible)
+    Shows/hides all cubes by toggling containerGroup.visible.
+
+  getOrCreateCube(sensorName)
+    Returns existing cube for a sensor, or creates a brand new one.
+    New cube construction:
+      BoxGeometry (0.22 wide x 0.12 tall x 0.22 deep):
+        Face [0] +X = RED         (right face)
+        Face [1] -X = Dark Red    (left face)
+        Face [2] +Y = GREEN       (top face)
+        Face [3] -Y = Dark Green  (bottom face)
+        Face [4] +Z = BLUE        (front face)
+        Face [5] -Z = Dark Blue   (back face)
+      Chip detail: small black box on top face (decorative)
+      LED sphere: tiny green glowing dot on top-back corner (decorative)
+      ArrowHelpers: +X (red), +Y (green), +Z (blue) direction arrows
+      EdgesGeometry: white outline lines around the box
+    All assembled into a THREE.Group added to containerGroup.
+    cubeData stored in this.cubes map includes:
+      group, chassisMesh, targetQuaternion, currentQuaternion,
+      zeroQuaternion, lastRawQuaternion, targetPos, currentPos,
+      hasReceivedData (boolean)
+    Calls repositionCubes() to space them out.
+
+    Cleanup logic: If a placeholder 'Sensor1' cube was created at startup
+    but never received real data, and a cube for a different sensor name
+    now arrives, the placeholder is removed.
+
+  repositionCubes()
+    Evenly spaces all cubes along the X axis with 0.45 unit gaps.
+    1 cube: centered at x=0
+    7 cubes: spread from x=-1.35 to x=+1.35
+
+  updateSensorData(sensorName, data)
+    Called every data frame. Extracts quaternion and stores target rotation.
+    Quaternion extraction supports:
+      qw/qx/qy/qz, w/x/y/z, q0/q1/q2/q3, data.quat array
+    CRITICAL GUARD: Validates quaternion length > 1e-6 before using it.
+      (A zero-length quaternion normalized gives NaN, making the cube invisible)
+    Applies globalAxisConfig.transformQuaternion() for axis remapping.
+    Applies zero calibration: targetQuat = inverse(zeroQuat) * rawQuat
+    Fallback: If no quaternion fields found but roll/pitch/yaw exist, converts
+              those Euler angles to a quaternion instead.
+
+  calibrateZero(sensorName)
+    Copies each cube's lastRawQuaternion to its zeroQuaternion.
+    If sensorName given: zeros only that cube. Otherwise: zeros all cubes.
+
+  update(time, delta)  [CALLED 60x PER SECOND]
+    For every cube:
+      1. Validates targetQuaternion is not NaN.
+      2. Slerps currentQuaternion toward targetQuaternion by slerpFactor.
+      3. Applies quaternion to cube group rotation.
+      4. Lerps currentPos toward targetPos by 0.1 (position smoothing).
+      5. Applies position to cube group.
+
+
+================================================================================
+15. /src/components/lights.js - STUDIO LIGHTING (class LightSetup)
+================================================================================
+
+Sets up a professional 3-point lighting system for cinematic rendering.
+3-point lighting is the standard technique in photography, film, and game art.
+
+THREE LIGHTS:
+
+  ambientLight (HemisphereLight)
+    Sky color: white, Ground color: dark blue-gray, Intensity: 0.6
+    Provides overall baseline light so nothing is completely black.
+    No shadows. Simulates open-sky environment light.
+
+  keyLight (DirectionalLight) - THE PRIMARY LIGHT
+    Color: white, Intensity: 2.5, Position: (5, 8, 5) - front-right-above
+    The strongest light. Defines the main shadows on the model.
+    Shadow map: 2048x2048 resolution, PCF soft shadows.
+    Shadow camera frustum: left/right +/-6, top 8, bottom -2.
+
+  fillLight (DirectionalLight) - THE SECONDARY LIGHT
+    Color: indigo-blue (#818cf8), Intensity: 1.2, Position: (-6, 4, 4) - front-left
+    Softens the harsh shadows created by the key light. No shadows.
+
+  rimLight (PointLight) - THE KICKER / RIM LIGHT
+    Color: sky-blue (#38bdf8), Intensity: 4.0, Range: 20 units
+    Positioned behind the model, creates bright silhouette edge highlighting.
+    This light ORBITS the model every animation frame.
+
+FUNCTIONS:
+
+  setPreset(presetName)
+    Reconfigures all light colors and intensities for three themes:
+      'Studio Neutral'  : White key, slate fill, cyan rim. Clean, bright.
+      'Cyberpunk Neon'  : Dark ambient, purple key, cyan fill, hot-pink rim.
+      'Warm Sunset'     : Brown ambient, amber key, red fill, purple rim.
+
+  update(time)  [CALLED 60x PER SECOND]
+    Orbits the rim light around the model using sine/cosine:
+      rimLight.position.x = sin(time * 0.4) * 4
+      rimLight.position.z = cos(time * 0.4) * 4 - 4
+    Creates dynamic specular highlights that make the model look alive.
+
+
+================================================================================
+16. /src/components/heroObject.js - DECORATIVE OBJECT (class HeroObject)
+================================================================================
+
+NOTE: This component is NOT part of the main application flow.
+It appears to be from an earlier version of the app or a demo showcase.
+It is NOT instantiated in main.js.
+
+Creates a decorative rotating 3D geometric object (TorusKnot by default) with:
+  - A physically-based glass/metal material (MeshPhysicalMaterial)
+  - A surrounding transparent wireframe icosahedron cage
+  - Floating sine-wave bobbing animation
+  - Auto-rotation animation
+
+Geometry options: TorusKnot, Icosahedron, Dodecahedron, Torus
+
+FUNCTIONS:
+  createGeometries() - Builds all four geometry types upfront.
+  createMaterial()   - Creates PBR material with metalness, clearcoat, transmission.
+  createMesh()       - Creates main mesh at position y=0.5.
+  createOuterCage()  - Transparent wireframe icosahedron surrounding the mesh.
+  createGroundGrid() - Shadow-receiving ground plane + grid helper.
+  setGeometry(type)  - Switches the active geometry shape.
+  updateMaterial()   - Applies current material parameter values.
+  update(time, delta)- Rotates mesh/cage, applies sine-wave bobbing:
+                         bobHeight = sin(time * 1.5) * 0.15
+
+
+================================================================================
+17. /src/components/particles.js - BACKGROUND PARTICLES (class ParticleConstellation)
+================================================================================
+
+NOTE: Also NOT in the current main.js flow. Decorative background effect.
+
+Creates 800 particles in a spherical shell (radius 8-26 units) around the scene.
+Uses THREE.Points with AdditiveBlending so particles glow where they overlap.
+
+Color palette: Indigo (#6366f1), Cyan (#06b6d4), Pink (#e879f9), White (#ffffff)
+Each particle randomly picks one color. Sizes vary (0.5 to 2.0).
+
+FUNCTIONS:
+  init()       - Creates BufferGeometry with random positions, colors, scales.
+                 Adds THREE.Points to the scene.
+  update(time) - Slowly rotates the particle field:
+                   rotation.y = time * 0.03
+                   rotation.x = sin(time * 0.02) * 0.05
+
+
+================================================================================
+18. /src/pages/calibrationPage.js - SENSOR MAPPING PAGE (class CalibrationPage)
+================================================================================
+
+The second "page" of the app (shown when you click the Calibration nav button).
+It is a full-panel HTML UI - no WebGL - for assigning physical sensors to bones.
+
+EXPORTED CONSTANT: BONE_FRIENDLY_NAMES
+  Human-readable labels for the 20 bone keys. Examples:
+    'Spine2'   -> 'Chest (Spine2)'
+    'LeftUpLeg'-> 'Left Thigh (LeftUpLeg)'
+    'RightLeg' -> 'Right Shin (RightLeg)'
+
+CLASS: CalibrationPage
+
+PROPERTIES:
+  container         - The DOM element to render the page HTML into
+  humanModelManager - Read/write bone assignments
+  sensorDetector    - Read live motion states for sensor cards
+  saveManager       - Save state after mapping changes
+  selectedSensor    - Name of the currently "targeted" sensor
+
+LAYOUT generated by initLayout():
+  The page has two columns:
+
+  LEFT COLUMN (5/12 width): Active IMU Sensor Cards
+    Scrollable list of sensor cards, one per active sensor.
+    Each card contains:
+      - Sensor name + status dot (green=live data, cyan=mapped, grey=offline)
+      - <select> dropdown to assign a bone (one per sensor)
+      - Live accelerometer bar chart (real-time G-force indicator)
+      - "Target" button to select this sensor for body diagram assignment
+    Header: title + Auto-Save badge + Save/Load/Reset buttons
+
+  RIGHT COLUMN (7/12 width): Body Diagram + Bone Selector
+    An interactive SVG vector human body silhouette with 15 clickable zones:
+      Head, Chest(Spine2), Spine, Hips,
+      L/R Shoulder (not shown as separate zones), L/R Arm, L/R Forearm,
+      L/R Hand, L/R Thigh, L/R Shin, L/R Foot
+    A "Quick Bone Selector" grid of 20 buttons (one per Mixamo bone).
+    Clicking either the SVG zone or a bone button maps the selected sensor.
+
+FUNCTIONS:
+
+  initLayout()
+    Generates all the page HTML as a template string and injects into container.
+    Queries DOM references for gridContainer, sensorCountEl, selectedBadge,
+    bodyDiagramSvg, boneButtonsList. Calls initBoneButtons().
+
+  assignBoneToTarget(boneKey)
+    The core assignment function. Called when user clicks an SVG zone or button.
+    If no sensor is currently selected, auto-selects the first unmapped
+    live sensor (or first mapped sensor, or 'Sensor1' as last resort).
+    Calls humanModelManager.setSensorBoneMapping(sensor, boneKey).
+    Calls saveManager.saveState() to auto-save.
+    Shows a toast notification confirming the mapping.
+    Calls updateView().
+
+  showToast(msg)
+    Creates a floating notification div in the bottom-right corner.
+    Shows the message, then hides it after 2500ms.
+    Re-uses the same toast element to avoid duplicate creation.
+
+  initBoneButtons()
+    Dynamically generates 20 bone buttons in boneButtonsList grid.
+    Each button shows: bone key name, friendly label, mapped status.
+    Click handler calls assignBoneToTarget(boneKey).
+
+  bindEvents()
+    Attaches event listeners:
+      btnSaveState  -> saveManager.saveState(), shows toast
+      btnLoadState  -> saveManager.loadState(), shows toast, calls updateView()
+      btnResetMappings -> saveManager.resetToDefaults(), shows toast, updateView()
+      bodyDiagramSvg click -> finds closest .bone-zone element, calls
+                              assignBoneToTarget(zone.dataset.bone)
+      sensorDetector.onSensorUpdated -> calls updateSensorGauges() every frame
+
+  setSelectedSensor(sensorName)
+    Sets this.selectedSensor and calls updateView() to refresh highlighting.
+
+  _autoDetectBoneMapping(sensorName)
+    Smart auto-mapper: if a sensor name contains anatomical hints, suggests
+    a bone mapping automatically. Examples:
+      'R_FA' or 'RIGHTFOREARM' in name -> suggests 'RightForeArm'
+      'L_ARM' or 'LEFTARM' in name    -> suggests 'LeftArm'
+      'CHEST' or 'SPINE2' in name     -> suggests 'Spine2'
+    Called automatically when a new live sensor appears for the first time.
+    Returns the suggested bone key string, or '' if no match.
+
+  updateView()
+    Main render function. Rebuilds the sensor card list from scratch.
+    If live sensor data exists (from sensorDetector.getAllStates()):
+      Uses live sensors, marks them as isLive=true.
+    Otherwise (offline/waiting):
+      Uses sensor names from saved mapping, or Sensor1..7 as defaults.
+      Marks them as isLive=false.
+    For each sensor:
+      - Auto-detects bone if unmapped and live (calls _autoDetectBoneMapping).
+      - Creates a card div with sensor info, dropdown, accel bar, target button.
+      - Attaches dropdown onChange to humanModelManager.setSensorBoneMapping().
+      - Attaches card click to setSelectedSensor().
+    Calls updateHighlighting() after building cards.
+
+  updateHighlighting()
+    Synchronizes visual state of SVG zones and bone buttons based on current
+    sensorBoneMap and selectedSensor:
+
+    SVG Zones (3 states):
+      Currently selected bone: solid indigo fill, bright border
+      Mapped to any sensor:    green fill, green border
+      Unmapped:                dark fill, grey border (default hover state)
+
+    Bone Buttons (3 states):
+      Currently selected bone: indigo background, "target" sensor label
+      Mapped to a sensor:      emerald green background, sensor name shown
+      Unmapped:                dark background, "Unmapped" label
+
+  updateSensorGauges()
+    Called EVERY SENSOR FRAME via onSensorUpdated callback.
+    Updates ONLY the dynamic values in existing card DOM elements
+    (does NOT rebuild cards - for performance):
+      - accVal text: e.g. "2.43 m/s^2"
+      - accBar width: percentage of 20 m/s^2 max
+      - card border color: indigo if selected, default if not
+      - status dot color: indigo if selected, emerald if live
+    Calls updateHighlighting() to keep bone highlights current.
+
+
+================================================================================
+19. FULL DATA FLOW - FROM SENSOR HARDWARE TO AVATAR ON SCREEN
+================================================================================
+
+Step 1:  PHYSICAL SENSOR
+  The IMU chip reads accelerometer + gyroscope values.
+  An onboard microcontroller runs sensor fusion (e.g. Mahony/Madgwick filter)
+  to compute a quaternion (qw, qx, qy, qz) representing 3D orientation.
+
+Step 2:  WIRELESS TRANSMISSION
+  The microcontroller sends this data over Wi-Fi (TCP or UDP) to a server.
+  The server (Raspberry Pi, laptop, etc.) runs a WebSocket broadcaster.
+  Target address: ws://192.168.1.144:3000/ws
+
+Step 3:  IMUSocketService.connect() / onmessage
+  The browser receives a JSON frame. Example format:
+    { "type": "frame", "data": { "sensors": {
+        "Sensor1": { "qw":0.99, "qx":0.01, "qy":0.05, "qz":0.02,
+                     "ax":0.1, "ay":9.8, "az":0.3,
+                     "gx":0.5, "gy":1.2, "gz":0.3 }
+    }}}
+  frameCount++, fires onFrameReceived(frame, sensors).
+
+Step 4:  UIManager.bindSocketEvents() - onFrameReceived handler
+  Normalizes sensor data to: { "Sensor1": { qw, qx, ... }, ... }
+  Updates HUD: frame count, timestamp, sensor count.
+  Calls updateSensorTable() -> refreshes telemetry table rows.
+  For each sensor: runs the three parallel pipelines below.
+
+Step 5A: IMUCubeManager.updateSensorData(name, data)
+  Extracts qw/qx/qy/qz.
+  Validates non-zero length.
+  Applies axisConfig.transformQuaternion() -> world-space quaternion.
+  Applies zero offset: targetQuat = inv(zeroQuat) * rawQuat.
+  Stores in cube.targetQuaternion.
+
+Step 5B: HumanModelManager.updateSensorData(name, data)
+  Same extraction and transformation.
+  Stores raw quat in state.lastRawQuat.
+  Applies zero offset: state.targetQuat = inv(zeroQuat) * rawQuat.
+  (Does NOT touch bones yet - that happens in Step 6B)
+
+Step 5C: SensorDetector.processSensorFrame(name, data)
+  Extracts ax/ay/az and gx/gy/gz.
+  Computes accMag, gyroMag, accDev, deltaAcc, intensity.
+  Updates isShaking state.
+  Fires onSensorUpdated -> CalibrationPage.updateSensorGauges()
+    -> Updates accVal text, accBar width, card highlight in the UI.
+
+Step 6:  SceneManager.animate() - runs ~60 times per second
+  delta = clock.getDelta()  (typically ~0.016 seconds = 16ms)
+  controls.update()         (applies orbit damping)
+  Calls all updateCallbacks:
+
+Step 6A: IMUCubeManager.update(time, delta)
+  For each cube:
+    slerp(currentQuat, targetQuat, 0.25)
+    group.quaternion.copy(currentQuat)   -> cube smoothly rotates on screen
+    lerp(currentPos, targetPos, 0.1)     -> smooth position if acc-bump enabled
+
+Step 6B: HumanModelManager.update(time, delta)
+  Reset all bones to T-pose rest quaternions (clean baseline).
+  For each sensor-bone mapping:
+    slerp(currentQuat, targetQuat, 0.25)
+    bone.parent.updateWorldMatrix(true, false)
+    parentWorldQuat = bone.parent.getWorldQuaternion()
+    localQuat = parentWorldQuat.invert() * currentQuat
+    bone.quaternion.copy(localQuat)      -> bone rotates on screen
+  skeletonHelper.update() if visible
+
+Step 6C: LightSetup.update(time)
+  rimLight.position.x = sin(time * 0.4) * 4  -> orbiting rim light
+
+Step 7:  renderer.render(scene, camera)
+  The GPU rasterizes all 3D geometry, applies materials, computes shadows
+  and lighting, and outputs pixels to the canvas element.
+  viewHelper.render(renderer) draws the orientation gizmo overlay on top.
+
+Step 8:  USER SEES THE AVATAR MOVING
+
+
+================================================================================
+20. KEY CONCEPTS GLOSSARY
+================================================================================
+
+IMU (Inertial Measurement Unit)
+  A chip combining a 3-axis accelerometer + 3-axis gyroscope.
+  Accelerometer: measures linear acceleration (m/s^2) in X, Y, Z directions.
+  Gyroscope:     measures angular velocity (degrees/second) around X, Y, Z.
+  Together they determine how a device is oriented and moving in 3D space.
+
+Quaternion (qw, qx, qy, qz)
+  A mathematical object using 4 numbers to represent a 3D rotation.
+  Avoids "gimbal lock" (a problem with 3-angle Euler representations).
+  A unit quaternion has length 1.0.
+  Identity quaternion (no rotation): qw=1, qx=0, qy=0, qz=0.
+  IMU sensor fusion algorithms (Mahony, Madgwick) output quaternions.
+
+Slerp (Spherical Linear Interpolation)
+  Smoothly interpolates between two quaternions along the shortest arc.
+  Used to prevent the avatar from snapping instantly to new orientations.
+  slerp(current, target, factor):
+    factor=0 -> stays at current
+    factor=1 -> instantly jumps to target
+    factor=0.25 -> moves 25% of the remaining distance each frame
+  This creates smooth, natural-looking motion even with noisy sensor data.
+
+FBX (Filmbox)
+  A proprietary Autodesk 3D file format. Can contain geometry (mesh),
+  materials, textures, animations, and skeletal rigs with bones.
+  Three.js includes an FBXLoader that parses and imports FBX files at runtime.
+
+Mixamo
+  Adobe's free online service that provides rigged 3D characters with a
+  standardized bone naming convention. All bones are named "mixamorigBoneName"
+  (e.g. "mixamorigRightForeArm"). This consistency lets the app reference
+  bones by predictable names across any Mixamo-rigged model.
+
+Bone Hierarchy
+  Bones are organized in a parent-child tree. The Hips bone is the root.
+  All other bones descend from it: Spine -> Spine1 -> Spine2 -> Neck -> Head.
+  A child bone's rotation is RELATIVE to its parent. This means when you
+  rotate an arm bone, the hand bone rotates WITH it because it's a child.
+
+World vs Local Rotation
+  World rotation: absolute orientation relative to the global scene origin.
+  Local rotation: orientation relative to the parent bone's orientation.
+  Sensors give WORLD rotations. Bones need LOCAL rotations.
+  Conversion: localQuat = inverse(parentWorldQuat) * worldQuat
+
+T-Pose
+  Standard rest pose for rigged characters: standing straight, arms spread
+  horizontally forming a T shape. All bones are at their natural rest angles.
+  The app stores these T-pose quaternions and resets to them every frame
+  before applying sensor data (so unmapped bones always look natural).
+
+Zero Calibration
+  The process of recording the sensor's CURRENT orientation as the "zero"
+  reference point. After zeroing, all rotations are computed RELATIVE to
+  that reference. This lets you attach sensors in any physical orientation -
+  just stand in T-pose and press Zero, and the avatar resets correctly.
+  Formula: targetQuat = inverse(zeroQuat) * currentRawQuat
+
+WebSocket
+  A persistent, full-duplex network connection between browser and server.
+  Unlike HTTP (request-response), WebSocket keeps the connection open and
+  the server can push data to the client at any time. Perfect for real-time
+  sensor streaming at 30-100 frames per second.
+
+localStorage
+  A browser API for storing string key-value pairs persistently.
+  Survives page refresh, browser close, and computer restart.
+  Max storage: ~5MB per origin (domain). JSON.stringify/parse used for objects.
+  Used here to remember bone mappings and UI settings between sessions.
+
+Three.js
+  An open-source JavaScript 3D graphics library built on top of WebGL.
+  Abstracts low-level GPU operations into a scene graph of objects:
+  Scene, Camera, Mesh, Material, Geometry, Light, etc.
+  The core rendering engine of this entire application.
+
+WebGL
+  Web Graphics Library. A browser API for GPU-accelerated 3D rendering.
+  Three.js uses WebGL internally to draw the 3D scene.
+
+G-Force (G)
+  Unit of acceleration relative to Earth's gravity (9.81 m/s^2 = 1G).
+  At rest, an accelerometer reads 1G from gravity.
+  During movement, this value changes. Deviation from 1G = motion detected.
+
+Lerp / Slerp
+  Lerp = Linear Interpolation: smoothly blend between two values linearly.
+  Slerp = Spherical Linear Interpolation: same but on a sphere (for quaternions).
+  Both use a factor t (0=start, 1=end) to control the blend amount.
+
+PBR (Physically Based Rendering)
+  A rendering approach that simulates how light interacts with real materials.
+  Key parameters: metalness (0=plastic, 1=metal), roughness (0=shiny, 1=matte).
+  Three.js MeshStandardMaterial and MeshPhysicalMaterial are PBR materials.
+
+================================================================================
+END OF EXPLANATION
+Written: 2026-08-19 | BioMechanicalTwin Project
+================================================================================
