@@ -1,14 +1,22 @@
+/**
+ * @file lights.js
+ * @description Professional Studio 3-Point Lighting Rig for Three.js.
+ * @module LightSetup
+ *
+ * Configures Hemisphere Light (ambient contrast), Directional Key Light (shadow caster),
+ * Directional Fill Light (shadow softener), Point Rim Light (silhouette kicker), and lighting presets.
+ */
+
 import * as THREE from 'three';
 
 /**
- * Professional Studio 3-Point Lighting Rig
- * Includes:
- * 1. Key Light (Main dominant directional/spot light with soft shadows)
- * 2. Fill Light (Opposite side fill light to soften dark shadows)
- * 3. Rim / Kicker Light (High back light to separate character silhouette from background)
- * 4. Ambient / Hemisphere Light (Soft environment baseline illumination)
+ * Manages studio 3-point lighting environment, shadows, and dynamic rim movement.
  */
 export class LightSetup {
+  /**
+   * Constructs the LightSetup instance.
+   * @param {THREE.Scene} scene - Parent Three.js Scene object.
+   */
   constructor(scene) {
     this.scene = scene;
 
@@ -16,7 +24,7 @@ export class LightSetup {
     this.ambientLight = new THREE.HemisphereLight(0xffffff, 0x1e1e2e, 0.6);
     this.scene.add(this.ambientLight);
 
-    // 1. KEY LIGHT: Primary High-Intensity Directional Spot (Front Right)
+    // 1. KEY LIGHT: Primary High-Intensity Directional Light (Front Right Shadow Caster)
     this.keyLight = new THREE.DirectionalLight(0xffffff, 2.5);
     this.keyLight.position.set(5, 8, 5);
     this.keyLight.castShadow = true;
@@ -31,21 +39,25 @@ export class LightSetup {
     this.keyLight.shadow.bias = -0.0005;
     this.scene.add(this.keyLight);
 
-    // 2. FILL LIGHT: Secondary Soft Cool Fill (Front Left)
+    // 2. FILL LIGHT: Secondary Soft Cool Directional Fill Light (Front Left)
     this.fillLight = new THREE.DirectionalLight(0x818cf8, 1.2);
     this.fillLight.position.set(-6, 4, 4);
     this.scene.add(this.fillLight);
 
-    // 3. RIM LIGHT: High-Back Kicker Light (Silhouette Highlights)
+    // 3. RIM LIGHT: High-Back Point Kicker Light (Silhouette Highlights)
     this.rimLight = new THREE.PointLight(0x38bdf8, 4.0, 20);
     this.rimLight.position.set(0, 6, -5);
     this.scene.add(this.rimLight);
 
-    // Helper lights group
+    // Helper group
     this.lightGroup = new THREE.Group();
     this.scene.add(this.lightGroup);
   }
 
+  /**
+   * Applies a lighting environment preset configuration.
+   * @param {'Studio Neutral' | 'Cyberpunk Neon' | 'Warm Sunset'} presetName - Preset identifier.
+   */
   setPreset(presetName) {
     switch (presetName) {
       case 'Studio Neutral':
@@ -95,8 +107,12 @@ export class LightSetup {
     }
   }
 
+  /**
+   * Per-frame dynamic light animation update.
+   * @param {number} time - Elapsed time in seconds.
+   */
   update(time) {
-    // Subtle animated movement of rim light to give dynamic depth
+    // Animated orbital motion for rim light to produce dynamic specular highlights
     this.rimLight.position.x = Math.sin(time * 0.4) * 4;
     this.rimLight.position.z = Math.cos(time * 0.4) * 4 - 4;
   }

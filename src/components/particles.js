@@ -1,6 +1,23 @@
+/**
+ * @file particles.js
+ * @description Procedural 3D Particle Constellation Background.
+ * @module ParticleConstellation
+ *
+ * Generates a spherical particle field with additive color blending, variable sizes,
+ * and slow orbital motion to create ambient depth in the 3D viewport.
+ */
+
 import * as THREE from 'three';
 
+/**
+ * Manages procedural 3D particle background field.
+ */
 export class ParticleConstellation {
+  /**
+   * Constructs the ParticleConstellation instance.
+   * @param {THREE.Scene} scene - Parent Three.js Scene object.
+   * @param {number} [count=800] - Total particle count.
+   */
   constructor(scene, count = 800) {
     this.scene = scene;
     this.count = count;
@@ -8,6 +25,10 @@ export class ParticleConstellation {
     this.init();
   }
 
+  /**
+   * Initializes particle BufferGeometry, color palette, and PointsMaterial.
+   * @private
+   */
   init() {
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(this.count * 3);
@@ -60,6 +81,10 @@ export class ParticleConstellation {
     this.scene.add(this.points);
   }
 
+  /**
+   * Per-frame update for gentle orbital rotation.
+   * @param {number} time - Elapsed time in seconds.
+   */
   update(time) {
     if (this.points) {
       // Gentle orbital rotation

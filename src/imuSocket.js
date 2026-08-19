@@ -1,9 +1,17 @@
 /**
- * IMU WebSocket Service
- * Handles WebSocket connection to IMU sensor server, auto-reconnecting,
- * frame counting, FPS calculation, and broadcasting frame data to listeners.
+ * @file imuSocket.js
+ * @description WebSocket Telemetry Streaming Service for IMU hardware sensors.
+ * @module IMUSocketService
+ *
+ * Manages WebSocket connection lifecycle, automatic reconnection handling, real-time JSON
+ * telemetry payload parsing, streaming FPS calculation, and listener callbacks.
  */
+
 export class IMUSocketService {
+  /**
+   * Constructs the WebSocket streaming service.
+   * @param {string} [url='ws://192.168.1.144:3000/ws'] - Target WebSocket endpoint URL.
+   */
   constructor(url = 'ws://192.168.1.144:3000/ws') {
     this.url = url;
     this.socket = null;
@@ -16,6 +24,7 @@ export class IMUSocketService {
     this.latestFrame = null;
     this.sensors = {};
 
+    // Callback event listeners
     this.onStatusChange = null;
     this.onFrameReceived = null;
     this.onFpsUpdate = null;
@@ -26,6 +35,10 @@ export class IMUSocketService {
     this.startFpsCounter();
   }
 
+  /**
+   * Sets a new WebSocket URL and initiates reconnection if modified.
+   * @param {string} newUrl - New WebSocket endpoint URL string.
+   */
   setUrl(newUrl) {
     if (this.url === newUrl && this.status === 'CONNECTED') return;
     this.url = newUrl;
@@ -33,6 +46,9 @@ export class IMUSocketService {
     this.connect();
   }
 
+  /**
+   * Establishes a WebSocket connection to the configured server endpoint.
+   */
   connect() {
     if (this.socket && (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)) {
       return;
@@ -45,7 +61,7 @@ export class IMUSocketService {
       this.socket = new WebSocket(this.url);
 
       this.socket.onopen = () => {
-        console.log('[IMUSocket] Connected');
+        console.log('[IMUSocket] Connected successfully');
         this.updateStatus('CONNECTED');
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
@@ -58,7 +74,7 @@ export class IMUSocketService {
           const message = JSON.parse(event.data);
 
           if (message.type === 'connection') {
-            console.log('[IMUSocket] Connection msg:', message.message);
+            console.log('[IMUSocket] Connection message:', message.message);
             return;
           }
 
@@ -83,6 +99,7 @@ export class IMUSocketService {
 
           this.sensors = sensors;
 
+          // Dispatch frame to listener callback
           if (this.onFrameReceived) {
             this.onFrameReceived(frame, this.sensors);
           }
@@ -92,21 +109,25 @@ export class IMUSocketService {
       };
 
       this.socket.onclose = () => {
-        console.warn('[IMUSocket] Disconnected');
+        console.warn('[IMUSocket] Disconnected from server');
         this.updateStatus('DISCONNECTED');
         this.scheduleReconnect();
       };
 
       this.socket.onerror = (error) => {
-        console.error('[IMUSocket] Error:', error);
+        console.error('[IMUSocket] Connection error:', error);
       };
     } catch (err) {
-      console.error('[IMUSocket] Connection failed:', err);
+      console.error('[IMUSocket] Connection setup failed:', err);
       this.updateStatus('DISCONNECTED');
       this.scheduleReconnect();
     }
   }
 
+  /**
+   * Schedules an automatic reconnection attempt after a brief delay.
+   * @private
+   */
   scheduleReconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {
@@ -115,6 +136,9 @@ export class IMUSocketService {
     }, 2000);
   }
 
+  /**
+   * Closes active WebSocket connection and clears pending reconnection timers.
+   */
   disconnect() {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -131,6 +155,11 @@ export class IMUSocketService {
     this.updateStatus('DISCONNECTED');
   }
 
+  /**
+   * Updates connection status state and triggers onStatusChange callback.
+   * @param {'CONNECTING' | 'CONNECTED' | 'DISCONNECTED'} newStatus - New status string.
+   * @private
+   */
   updateStatus(newStatus) {
     this.status = newStatus;
     if (this.onStatusChange) {
@@ -138,6 +167,10 @@ export class IMUSocketService {
     }
   }
 
+  /**
+   * Starts a 1-second interval timer for calculating frame processing throughput (FPS).
+   * @private
+   */
   startFpsCounter() {
     this.fpsInterval = setInterval(() => {
       this.fps = this.lastSecondFrames;
@@ -148,6 +181,9 @@ export class IMUSocketService {
     }, 1000);
   }
 
+  /**
+   * Cleans up sockets and timers upon instance teardown.
+   */
   destroy() {
     this.disconnect();
     if (this.fpsInterval) clearInterval(this.fpsInterval);

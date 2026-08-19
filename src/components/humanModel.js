@@ -199,7 +199,7 @@ export class HumanModelManager {
       if (child.isMesh) {
         child.castShadow = true;
         child.receiveShadow = true;
-        
+
         // Ensure materials have smooth rendering and standard metal/roughness
         if (child.material) {
           if (Array.isArray(child.material)) {
@@ -435,9 +435,10 @@ export class HumanModelManager {
 
     // Reset sensor relative quaternions to identity
     for (const [_, state] of this.sensorStates) {
-      if (state.lastRawQuat && state.lastRawQuat.lengthSq() > 0) {
-        state.zeroQuat.copy(state.lastRawQuat);
-      }
+      // if (state.lastRawQuat && state.lastRawQuat.lengthSq() > 0) {
+      //   state.zeroQuat.copy(state.lastRawQuat);
+      // }
+      state.zeroQuat.set(0, 0, 0, 1);
       state.targetQuat.set(0, 0, 0, 1);
       state.currentQuat.set(0, 0, 0, 1);
     }
@@ -470,7 +471,7 @@ export class HumanModelManager {
   update(time, delta) {
     if (!this.model) return;
 
-    // Reset all bones to rest T-pose quaternion first every frame
+    // Reset all bones to rest T-pose first
     for (const [boneName, bone] of this.bones) {
       const restQuat = this.boneRestQuaternions.get(boneName);
       if (restQuat) {
@@ -478,25 +479,42 @@ export class HumanModelManager {
       }
     }
 
-    // Smoothly slerp current sensor quaternions and apply to mapped bones
+    // Apply sensor world rotations
     for (const [sensorName, boneKey] of Object.entries(this.sensorBoneMap)) {
       const state = this.sensorStates.get(sensorName);
       const bone = this.getBone(boneKey);
 
-      if (state && bone) {
-        // Slerp sensor quaternion towards relative target
-        state.currentQuat.slerp(state.targetQuat, this.slerpFactor);
+      if (!state || !bone) continue;
 
-        // Fetch bone rest quaternion
-        const restQuat = this.boneRestQuaternions.get(bone.name) || new THREE.Quaternion();
+      // Smooth the sensor WORLD rotation
+      state.currentQuat.slerp(state.targetQuat, this.slerpFactor);
 
-        // Forward Kinematics: Multiply rest quaternion by slerped sensor relative rotation
-        const finalQuat = restQuat.clone().multiply(state.currentQuat);
-        bone.quaternion.copy(finalQuat);
+      // Make sure parent's world transform is current
+      if (bone.parent) {
+        bone.parent.updateWorldMatrix(true, false);
+
+        // Parent's GLOBAL/WORLD rotation
+        const parentWorldQuat = new THREE.Quaternion();
+        bone.parent.getWorldQuaternion(parentWorldQuat);
+
+        // Sensor gives GLOBAL/WORLD rotation
+        const sensorWorldQuat = state.currentQuat.clone();
+
+        // Convert world rotation -> bone local rotation
+        //
+        // local = inverse(parentWorld) * world
+        const localQuat = parentWorldQuat
+          .clone()
+          .invert()
+          .multiply(sensorWorldQuat);
+
+        bone.quaternion.copy(localQuat);
+      } else {
+        // Root bone has no parent, so world == local
+        bone.quaternion.copy(state.currentQuat);
       }
     }
 
-    // Keep SkeletonHelper synced with animation step
     if (this.skeletonHelper && this.showSkeleton) {
       this.skeletonHelper.update();
     }

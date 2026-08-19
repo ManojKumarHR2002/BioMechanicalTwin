@@ -1,6 +1,22 @@
+/**
+ * @file heroObject.js
+ * @description Showcase Hero Object Mesh & Environment Floor plane manager.
+ * @module HeroObject
+ *
+ * Renders procedural 3D centerpiece geometry (TorusKnot, Icosahedron, Dodecahedron) with
+ * PBR physical materials, wireframe cages, floating bobbing animation, and ground shadow planes.
+ */
+
 import * as THREE from 'three';
 
+/**
+ * Manages showcase hero object meshes and environment backdrop geometry.
+ */
 export class HeroObject {
+  /**
+   * Constructs the HeroObject instance.
+   * @param {THREE.Scene} scene - Parent Three.js Scene object.
+   */
   constructor(scene) {
     this.scene = scene;
     this.group = new THREE.Group();
@@ -25,6 +41,10 @@ export class HeroObject {
     this.createGroundGrid();
   }
 
+  /**
+   * Initializes procedural 3D geometries.
+   * @private
+   */
   createGeometries() {
     this.geometries = {
       TorusKnot: new THREE.TorusKnotGeometry(1.2, 0.38, 128, 32, 2, 3),
@@ -34,6 +54,10 @@ export class HeroObject {
     };
   }
 
+  /**
+   * Initializes physical PBR glass/metal material.
+   * @private
+   */
   createMaterial() {
     this.material = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(this.params.color),
@@ -49,6 +73,10 @@ export class HeroObject {
     });
   }
 
+  /**
+   * Creates centerpiece mesh and adds to scene group.
+   * @private
+   */
   createMesh() {
     const geo = this.geometries[this.params.geometryType];
     this.mesh = new THREE.Mesh(geo, this.material);
@@ -58,6 +86,10 @@ export class HeroObject {
     this.group.add(this.mesh);
   }
 
+  /**
+   * Creates surrounding wireframe outer cage.
+   * @private
+   */
   createOuterCage() {
     const cageGeo = new THREE.IcosahedronGeometry(2.2, 1);
     const cageMat = new THREE.MeshBasicMaterial({
@@ -71,6 +103,10 @@ export class HeroObject {
     this.group.add(this.cageMesh);
   }
 
+  /**
+   * Creates shadow-receiving ground plane and helper grid.
+   * @private
+   */
   createGroundGrid() {
     // Shadow receiving ground plane
     const planeGeo = new THREE.PlaneGeometry(30, 30);
@@ -91,6 +127,10 @@ export class HeroObject {
     this.scene.add(this.gridHelper);
   }
 
+  /**
+   * Switches active geometry type.
+   * @param {'TorusKnot' | 'Icosahedron' | 'Dodecahedron' | 'Torus'} type - Geometry key.
+   */
   setGeometry(type) {
     if (this.geometries[type]) {
       this.params.geometryType = type;
@@ -98,6 +138,9 @@ export class HeroObject {
     }
   }
 
+  /**
+   * Re-applies physical material parameters.
+   */
   updateMaterial() {
     this.material.color.set(this.params.color);
     this.material.metalness = this.params.metalness;
@@ -108,6 +151,11 @@ export class HeroObject {
     this.material.needsUpdate = true;
   }
 
+  /**
+   * Per-frame animation update for rotation and floating bobbing motion.
+   * @param {number} time - Total elapsed execution time in seconds.
+   * @param {number} delta - Time elapsed since last frame in seconds.
+   */
   update(time, delta) {
     if (this.params.autoRotate) {
       const speed = this.params.rotateSpeed;
