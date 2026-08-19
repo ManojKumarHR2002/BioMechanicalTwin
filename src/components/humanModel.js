@@ -435,10 +435,9 @@ export class HumanModelManager {
 
     // Reset sensor relative quaternions to identity
     for (const [_, state] of this.sensorStates) {
-      // if (state.lastRawQuat && state.lastRawQuat.lengthSq() > 0) {
-      //   state.zeroQuat.copy(state.lastRawQuat);
-      // }
-      state.zeroQuat.set(0, 0, 0, 1);
+      if (state.lastRawQuat && state.lastRawQuat.lengthSq() > 0) {
+        state.zeroQuat.copy(state.lastRawQuat);
+      }
       state.targetQuat.set(0, 0, 0, 1);
       state.currentQuat.set(0, 0, 0, 1);
     }
