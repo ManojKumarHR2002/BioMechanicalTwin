@@ -46,15 +46,7 @@ export class HumanModelManager {
     this.boneRestQuaternions = new Map();
 
     // Sensor to Bone Mappings: { [sensorName]: boneName }
-    this.sensorBoneMap = {
-      Sensor1: 'RightForeArm',
-      Sensor2: 'RightArm',
-      Sensor3: 'LeftForeArm',
-      Sensor4: 'LeftArm',
-      Sensor5: 'Spine2',
-      Sensor6: 'RightLeg',
-      Sensor7: 'LeftLeg',
-    };
+    this.sensorBoneMap = {};
 
     // Live sensor state tracking
     this.sensorStates = new Map();
