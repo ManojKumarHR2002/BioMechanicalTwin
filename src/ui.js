@@ -76,6 +76,11 @@ export class UIManager {
     this.btnNav3D = document.getElementById('btnNav3D');
     this.btnNavCalibration = document.getElementById('btnNavCalibration');
     this.calibrationPageContainer = document.getElementById('calibrationPageContainer');
+
+    // Sync input field value with the active socket service URL
+    if (this.wsUrlInput && this.socketService && this.socketService.url) {
+      this.wsUrlInput.value = this.socketService.url;
+    }
   }
 
   initCalibrationPage() {

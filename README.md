@@ -100,7 +100,7 @@ Start the Vite development server:
 npm run dev
 ```
 
-Open your browser at `http://localhost:3000`.
+Open your browser at `http://localhost:5173`.
 
 ### 3. Connect to IMU WebSocket Server
 

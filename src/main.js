@@ -44,8 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     lights.update(time);
   });
 
-  // 6. Initialize Real-Time IMU WebSocket Telemetry Service
-  const socketService = new IMUSocketService('ws://192.168.1.144:3000/ws');
+  const socketService = new IMUSocketService();
   socketService.connect();
 
   // 7. Initialize UI Controller (HUD, Navigation, Kinematic Mapping Hub, State Preservation)
