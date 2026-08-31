@@ -10,13 +10,13 @@
 export class IMUSocketService {
   /**
    * Constructs the WebSocket streaming service.
-   * @param {string} [url='ws://192.168.1.144:3000/ws'] - Target WebSocket endpoint URL.
+   * @param {string} [url='ws://192.168.1.141:3000/ws'] - Target WebSocket endpoint URL.
    */
-  constructor(url = 'ws://192.168.1.144:3000/ws') {
+  constructor(url = 'ws://192.168.1.141:3000/ws') {
     this.url = url;
     this.socket = null;
     this.status = 'DISCONNECTED'; // 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED'
-    
+
     this.frameCount = 0;
     this.lastSecondFrames = 0;
     this.fps = 0;
