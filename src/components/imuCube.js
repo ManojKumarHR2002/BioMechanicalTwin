@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { globalAxisConfig } from '../axisConfig.js';
 
 export class IMUCubeManager {
   constructor(scene) {
@@ -9,8 +10,14 @@ export class IMUCubeManager {
 
     this.slerpFactor = 0.25;
     this.applyAccPosition = false;
+    this.enabled = true;
 
     this.getOrCreateCube('Sensor1');
+  }
+
+  setVisible(visible) {
+    this.enabled = visible;
+    this.containerGroup.visible = visible;
   }
 
   getOrCreateCube(sensorName) {
@@ -29,8 +36,8 @@ export class IMUCubeManager {
 
     const cubeGroup = new THREE.Group();
 
-    // Box Geometry (Width 2.2, Height 1.2, Depth 2.2)
-    const boxGeo = new THREE.BoxGeometry(2.2, 1.2, 2.2);
+    // Box Geometry (Width 0.22, Height 0.12, Depth 0.22) - 1/10th scale
+    const boxGeo = new THREE.BoxGeometry(0.22, 0.12, 0.22);
 
     // Three.js BoxGeometry Material Order:
     // [0]: +X (Right)  -> RED
@@ -53,24 +60,24 @@ export class IMUCubeManager {
     chassisMesh.receiveShadow = true;
     cubeGroup.add(chassisMesh);
 
-    // Solid Microchip Detail on Top (+Y) Face
-    const chipGeo = new THREE.BoxGeometry(0.8, 0.1, 0.8);
+    // Solid Microchip Detail on Top (+Y) Face (1/10th scale)
+    const chipGeo = new THREE.BoxGeometry(0.08, 0.01, 0.08);
     const chipMat = new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.2, metalness: 0.8 });
     const chipMesh = new THREE.Mesh(chipGeo, chipMat);
-    chipMesh.position.set(0, 0.65, 0);
+    chipMesh.position.set(0, 0.065, 0);
     cubeGroup.add(chipMesh);
 
-    // Status LED
-    const ledGeo = new THREE.SphereGeometry(0.1, 16, 16);
+    // Status LED (1/10th scale)
+    const ledGeo = new THREE.SphereGeometry(0.01, 16, 16);
     const ledMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
     const ledMesh = new THREE.Mesh(ledGeo, ledMat);
-    ledMesh.position.set(0.7, 0.66, -0.7);
+    ledMesh.position.set(0.07, 0.066, -0.07);
     cubeGroup.add(ledMesh);
 
-    // X, Y, Z Axis Helpers (+X = Red, +Y = Green, +Z = Blue)
-    const arrowLen = 2.4;
-    const arrowHeadLen = 0.45;
-    const arrowHeadWidth = 0.22;
+    // X, Y, Z Axis Helpers (+X = Red, +Y = Green, +Z = Blue) (1/10th scale)
+    const arrowLen = 0.24;
+    const arrowHeadLen = 0.045;
+    const arrowHeadWidth = 0.022;
 
     const arrowX = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), arrowLen, 0xef4444, arrowHeadLen, arrowHeadWidth);
     const arrowY = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), arrowLen, 0x10b981, arrowHeadLen, arrowHeadWidth);
@@ -110,7 +117,7 @@ export class IMUCubeManager {
   repositionCubes() {
     const total = this.cubes.size;
     let index = 0;
-    const spacing = 4.5;
+    const spacing = 0.45;
     const startX = -((total - 1) * spacing) / 2;
 
     for (const [_, cubeData] of this.cubes) {
@@ -170,7 +177,7 @@ export class IMUCubeManager {
       // CRITICAL BUG FIX: Validate quaternion length before normalizing!
       // If qw=0, qx=0, qy=0, qz=0 or NaN, normalizing will produce NaN and cause 3D cube to disappear.
       if (!isNaN(lengthSq) && lengthSq > 1e-6) {
-        const rawQ = new THREE.Quaternion(qx, qy, qz, qw).normalize();
+        const rawQ = globalAxisConfig.transformQuaternion(qx, qy, qz, qw);
         cube.lastRawQuaternion.copy(rawQ);
 
         const invZero = cube.zeroQuaternion.clone().invert();

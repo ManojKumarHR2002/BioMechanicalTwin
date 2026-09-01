@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IMU 3D Realtime Sensor Visualizer</title>
+  <title>BioMechanicalTwin - Rigged Mixamo FBX IMU Sensor Visualizer</title>
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -12,8 +12,11 @@
 </head>
 <body class="h-full bg-zinc-950 text-slate-100 overflow-hidden font-sans antialiased selection:bg-indigo-500 selection:text-white">
 
-  <!-- Fullscreen 3D WebGL Canvas (Takes up full view, center is clear for 3D Cube) -->
+  <!-- Fullscreen 3D WebGL Canvas -->
   <canvas id="webgl" class="fixed inset-0 w-full h-full outline-none z-0"></canvas>
+
+  <!-- Interactive Calibration & Shake-to-Map Hub View Container -->
+  <div id="calibrationPageContainer" class="hidden fixed inset-0 top-20 bottom-24 left-4 right-4 z-20 overflow-y-auto no-scrollbar pointer-events-auto"></div>
 
   <!-- TOP HEADER HUD (Anchored Top) -->
   <header class="fixed top-4 left-4 right-4 z-20 pointer-events-none flex flex-wrap items-center justify-between gap-3">
@@ -27,39 +30,40 @@
       <div>
         <div class="flex items-center gap-2">
           <h1 class="text-sm sm:text-base font-bold font-['Space_Grotesk'] text-white tracking-wide">
-            IMU 3D Visualizer
+            BioMechanicalTwin
           </h1>
           <span id="status" class="status text-[11px] px-2.5 py-0.5 rounded-full font-mono font-semibold bg-slate-800 text-slate-400 border border-slate-700">
             DISCONNECTED
           </span>
         </div>
-        <p class="text-[11px] text-slate-400 font-light hidden sm:block">Quaternion Orientation Telemetry</p>
+        <p class="text-[11px] text-slate-400 font-light hidden sm:block">Mixamo FBX IMU Sensor Rigging Engine</p>
       </div>
     </div>
 
-    <!-- Center: Horizontal Compact Stats Pills (Non-obstructive) -->
-    <div class="hidden xl:flex items-center gap-2 glass-panel p-1.5 rounded-2xl pointer-events-auto text-xs font-mono">
-      <div class="px-3 py-1.5 bg-slate-950/60 rounded-xl border border-white/5 flex items-center gap-2">
-        <span class="text-slate-400 font-sans">WS:</span>
-        <span id="connection" class="font-bold text-rose-400">Disconnected</span>
+    <!-- Center: Page Navigation Tabs & Visibility Toggles -->
+    <div class="glass-panel p-1.5 rounded-2xl pointer-events-auto flex items-center gap-2 text-xs">
+      <div class="flex items-center gap-1 border-r border-white/10 pr-2">
+        <button id="btnNav3D" class="px-3 py-1.5 rounded-xl font-semibold transition-all bg-indigo-600/90 text-white shadow-lg shadow-indigo-500/20 flex items-center gap-1.5">
+          <span>🎮 3D Viewport</span>
+        </button>
+        <button id="btnNavCalibration" class="px-3 py-1.5 rounded-xl font-medium transition-all text-slate-300 hover:text-white hover:bg-white/10 flex items-center gap-1.5">
+          <span>🎯 Sensor Mapping</span>
+        </button>
       </div>
-      <div class="px-3 py-1.5 bg-slate-950/60 rounded-xl border border-white/5 flex items-center gap-2">
-        <span class="text-slate-400 font-sans">Frames:</span>
-        <span id="frameCount" class="font-bold text-indigo-400">0</span>
-      </div>
-      <div class="px-3 py-1.5 bg-slate-950/60 rounded-xl border border-white/5 flex items-center gap-2">
-        <span class="text-slate-400 font-sans">Rate:</span>
-        <span id="fps" class="font-bold text-emerald-400">0 FPS</span>
-      </div>
-      <div class="px-3 py-1.5 bg-slate-950/60 rounded-xl border border-white/5 flex items-center gap-2">
-        <span class="text-slate-400 font-sans">Sensors:</span>
-        <span id="sensorCount" class="font-bold text-cyan-400">0</span>
-      </div>
+
+      <button id="btnToggleModel" class="px-3 py-1.5 rounded-xl font-semibold transition-all bg-indigo-600/90 text-white shadow-lg shadow-indigo-500/20 flex items-center gap-1.5 border border-indigo-500/50" title="Enable/Disable Human FBX Model">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span>🧍 Model</span>
+      </button>
+      <button id="btnToggleCubes" class="px-3 py-1.5 rounded-xl font-medium transition-all bg-cyan-600/30 text-cyan-200 hover:bg-cyan-600/50 flex items-center gap-1.5 border border-cyan-500/40" title="Enable/Disable 3D IMU Cubes">
+        <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+        <span>🧊 Cubes</span>
+      </button>
     </div>
 
-    <!-- Right: WebSocket URL Config Bar & Controls -->
+    <!-- Right: Config & Quick Action Buttons -->
     <div class="flex items-center gap-2 glass-panel p-1.5 rounded-2xl pointer-events-auto max-w-full overflow-x-auto">
-      <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-white/10 w-48 sm:w-60">
+      <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-white/10 w-44 sm:w-56">
         <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.657-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.657-9 3-9" />
         </svg>
@@ -70,13 +74,28 @@
         Connect
       </button>
 
+      <button id="btnBoneMapping" class="glass-button px-3 py-1.5 rounded-xl text-xs font-medium text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/30 border border-cyan-500/30 transition-all shrink-0 flex items-center gap-1" title="Configure Sensor to Bone Mappings">
+        <span>⚙️ Bone Mapping</span>
+      </button>
+
+      <button id="btnSkeletonToggle" class="glass-button px-3 py-1.5 rounded-xl text-xs font-medium text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/30 border border-purple-500/30 transition-all shrink-0" title="Toggle 3D Skeleton Visualizer">
+        🦴 Skeleton
+      </button>
+
+      <button id="btnUploadFbx" class="glass-button px-3 py-1.5 rounded-xl text-xs font-medium text-emerald-300 hover:text-white bg-emerald-500/10 hover:bg-emerald-500/30 border border-emerald-500/30 transition-all shrink-0 flex items-center gap-1" title="Upload Custom Mixamo FBX Model">
+        <span>📁 Upload FBX</span>
+      </button>
+
       <button id="btnZero" class="glass-button px-3 py-1.5 rounded-xl text-xs font-medium text-amber-300 hover:text-white bg-amber-500/10 hover:bg-amber-500/30 border border-amber-500/30 transition-all shrink-0" title="Reset Orientation Reference">
         Zero Calibrate
       </button>
+
+      <!-- Hidden file input for custom FBX loader -->
+      <input type="file" id="fbxFileInput" accept=".fbx" class="hidden" />
     </div>
   </header>
 
-  <!-- FLOATING SIDE DOCK FOR SMALLER SCREENS (Top Left below header) -->
+  <!-- FLOATING SIDE DOCK FOR SMALLER SCREENS -->
   <aside class="fixed top-20 left-4 z-20 pointer-events-auto xl:hidden flex flex-col gap-2 glass-panel p-3 rounded-2xl w-60 text-xs font-mono">
     <div class="flex justify-between items-center pb-1 border-b border-white/10 text-slate-400 font-sans font-semibold uppercase text-[10px]">
       <span>Telemetry Stats</span>
@@ -100,6 +119,52 @@
     </div>
   </aside>
 
+  <!-- BONE MAPPING MODAL -->
+  <div id="boneMappingModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-white/10 animate-fade-in flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-indigo-600/30 flex items-center justify-center border border-indigo-500/30 text-indigo-300 font-bold">
+            🦴
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white font-['Space_Grotesk']">Sensor-to-Bone Kinematic Matrix</h3>
+            <p class="text-xs text-slate-400">Map active IMU sensors to Mixamo FBX skeleton bones</p>
+          </div>
+        </div>
+        <button id="btnCloseBoneMapping" class="w-7 h-7 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center text-xs transition-all">
+          ✕
+        </button>
+      </div>
+
+      <!-- Scrollable Window Container for Sensor List -->
+      <div class="bg-slate-950/70 p-3 rounded-2xl border border-white/10 shadow-inner flex flex-col gap-2">
+        <div class="flex items-center justify-between px-2 pb-1.5 border-b border-white/10 text-[11px] font-mono text-slate-400">
+          <span>Active Sensor Stream</span>
+          <span>Kinematic Bone Target</span>
+        </div>
+        <div id="boneMappingList" class="flex flex-col gap-2.5 max-h-72 overflow-y-auto no-scrollbar pr-1">
+          <!-- Mapping Rows injected dynamically -->
+          <p class="text-xs text-slate-500 italic text-center py-4">Loading active sensor streams...</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between border-t border-white/10 pt-3">
+        <div class="flex items-center gap-2">
+          <button id="btnModalSaveState" class="px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 font-medium text-xs transition-all flex items-center gap-1" title="Save state to Local Storage">
+            <span>💾 Save State</span>
+          </button>
+          <button id="btnModalResetState" class="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-medium text-xs transition-all flex items-center gap-1" title="Reset state to default settings">
+            <span>🔄 Reset Defaults</span>
+          </button>
+        </div>
+        <button id="btnSaveBoneMapping" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all shadow-lg shadow-indigo-600/30">
+          Apply & Save State
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- BOTTOM COLLAPSIBLE TELEMETRY TRAY (Anchored Bottom) -->
   <footer class="fixed bottom-4 left-4 right-4 z-20 pointer-events-none">
     <div class="glass-panel rounded-2xl p-3 shadow-2xl backdrop-blur-xl pointer-events-auto transition-all duration-300">
@@ -109,7 +174,7 @@
         <div class="flex items-center gap-2">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
           <h2 class="text-xs sm:text-sm font-semibold font-['Space_Grotesk'] text-slate-200">
-            Sensor Live Telemetry Table
+            Sensor & Mixamo Bone Live Telemetry
           </h2>
         </div>
 
@@ -135,6 +200,7 @@
             <thead>
               <tr class="bg-slate-900/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
                 <th class="py-1.5 px-3">Sensor</th>
+                <th class="py-1.5 px-3 text-cyan-400">Mapped Bone</th>
                 <th class="py-1.5 px-3 text-red-400">ax</th>
                 <th class="py-1.5 px-3 text-emerald-400">ay</th>
                 <th class="py-1.5 px-3 text-blue-400">az</th>
@@ -149,7 +215,7 @@
             </thead>
             <tbody id="sensorTable" class="divide-y divide-slate-800/60 text-slate-200">
               <tr>
-                <td colspan="11" class="py-3 text-center text-slate-500 font-sans italic">
+                <td colspan="12" class="py-3 text-center text-slate-500 font-sans italic">
                   Waiting for IMU sensor payload...
                 </td>
               </tr>
@@ -169,3 +235,4 @@
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
+
